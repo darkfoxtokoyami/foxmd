@@ -60,6 +60,9 @@ use std::fs::File;
 use std::io::prelude::*;
 use std::path::Path;
 use std::string;
+use std::sync::mpsc;
+use std::thread;
+use std::thread::JoinHandle;
 
 #[macro_use]
 extern crate lazy_static;
@@ -390,30 +393,35 @@ fn main() {
     //let test = "L[sub]o[/sub]o[sup]k[/sup]i[sub]n[/sub]g [u]for[/u] a [b][i][color=blue]quick[/color][/i][/b] [color =\"#FF0000\"]brown[/color] fox [s]that[/s] jumps over a[b][color=pink]lazy [/color]dog[/b] Find out more [url=localhost]here![/url] or [url=localhost]there![/url]. Lorem Ipsum Salts.";
 
     let args = CommandLineArguments::new();
+    fs::copy("./src/style.css", "style.css").unwrap();
 
     //TODO: If args != contain fmd_files || path -> Process * in working dir
     //TODO: If args contains path -> Process * in path
+    let mut handles: Vec<JoinHandle<()>> = Vec::new();
     for f in args.fmd_files {
-        let html_filename = &f[0..f.len() - 4];
-        let contents = fs::read_to_string(f.clone())
-            .expect(format!("Unable to read or find file: {}", f).as_str());
-        let fmd = FMD::new();
+        handles.push(thread::spawn(move || {
+            let html_filename = &f[0..f.len() - 4];
+            let contents = fs::read_to_string(f.clone())
+                .expect(format!("Unable to read or find file: {}", f).as_str());
+            let fmd = FMD::new();
 
-        write_html(
-            html_filename,
-            format!(
-                "{}{}{}",
-                HTML_HEADER,
-                fmd.pre_tokenize(contents.as_str())
-                    .replace_ibus()
-                    .concat_tokens(),
-                HTML_FOOTER
-            )
-            .as_str(),
-        );
+            write_html(
+                html_filename,
+                format!(
+                    "{}{}{}",
+                    HTML_HEADER,
+                    fmd.pre_tokenize(contents.as_str())
+                        .replace_ibus()
+                        .concat_tokens(),
+                    HTML_FOOTER
+                )
+                .as_str(),
+            );
+        }));
     }
-
-    fs::copy("./src/style.css", "style.css").unwrap();
+    for h in handles {
+        h.join().unwrap();
+    }
 }
 
 pub fn write_html(file_name: &str, html: &str) {
