@@ -1,5 +1,6 @@
 /target
 *.bak
+*.fmd
 *.gbin
 *.lock
 *.html

@@ -54,13 +54,49 @@ use regex::RegexSet;
 use serde::{Deserialize, Serialize};
 use serde_json::value::Index;
 use std::collections::HashMap;
+use std::env;
+use std::fs;
 use std::fs::File;
 use std::io::prelude::*;
 use std::path::Path;
 use std::string;
+
 #[macro_use]
 extern crate lazy_static;
 
+struct CommandLineArguments {
+    _args: Vec<String>,
+    fmd_files: Vec<String>,
+}
+
+impl CommandLineArguments {
+    fn new() -> CommandLineArguments {
+        CommandLineArguments {
+            _args: env::args().collect(),
+            fmd_files: {
+                let mut out = Vec::new();
+                for a in env::args() {
+                    if (a.to_lowercase().ends_with(".fmd")) {
+                        out.push(a);
+                    }
+                }
+
+                out
+            },
+        }
+    }
+
+    fn getFMDFiles(self, args: Vec<String>) -> Vec<String> {
+        let mut out = Vec::new();
+        for a in env::args() {
+            if (a.to_lowercase().ends_with(".fmd")) {
+                out.push(a);
+            }
+        }
+
+        out
+    }
+}
 struct FMD<'a> {
     _tokens: Vec<&'a str>,
     _incres: INCLUDED_RESOURCES,
@@ -116,7 +152,7 @@ impl<'a> FMD<'a> {
             _incres: self._incres,
         }
     }
-
+    // ! TODO: Replace \n with <br> or something
     fn replace_ibus(self) -> FMD<'a> {
         if (self._tokens.is_empty()) {
             return FMD::<'a> {
@@ -226,8 +262,10 @@ static HTML_HEADER: &str = r##"<!DOCTYPE html>
             </fieldset>
         </form>
         <main>
-        <p>"##;
+            <div class="wrapper">
+                <p>"##;
 static HTML_FOOTER: &str = r##"</p>
+            </div>
         </main>
         <script>
             const colorThemes = document.querySelectorAll('[name="theme"]');
@@ -349,39 +387,38 @@ lazy_static! {
 }
 fn main() {
     // let test = Document("Hello, world!".to_string());
-    let test = "L[sub]o[/sub]o[sup]k[/sup]i[sub]n[/sub]g [u]for[/u] a [b][i][color=blue]quick[/color][/i][/b] [color =\"#FF0000\"]brown[/color] fox [s]that[/s] jumps over a[b][color=pink]lazy [/color]dog[/b] Find out more [url=localhost]here![/url] or [url=localhost]there![/url]. Lorem Ipsum Salts.";
-    let fmd = FMD::new();
+    //let test = "L[sub]o[/sub]o[sup]k[/sup]i[sub]n[/sub]g [u]for[/u] a [b][i][color=blue]quick[/color][/i][/b] [color =\"#FF0000\"]brown[/color] fox [s]that[/s] jumps over a[b][color=pink]lazy [/color]dog[/b] Find out more [url=localhost]here![/url] or [url=localhost]there![/url]. Lorem Ipsum Salts.";
 
-    write_html(
-        format!(
-            "{}{}{}",
-            HTML_HEADER,
-            fmd.pre_tokenize(test).replace_ibus().concat_tokens(),
-            HTML_FOOTER
-        )
-        .as_str(),
-    );
+    let args = CommandLineArguments::new();
+
+    //TODO: If args != contain fmd_files || path -> Process * in working dir
+    //TODO: If args contains path -> Process * in path
+    for f in args.fmd_files {
+        let html_filename = &f[0..f.len() - 4];
+        let contents = fs::read_to_string(f.clone())
+            .expect(format!("Unable to read or find file: {}", f).as_str());
+        let fmd = FMD::new();
+
+        write_html(
+            html_filename,
+            format!(
+                "{}{}{}",
+                HTML_HEADER,
+                fmd.pre_tokenize(contents.as_str())
+                    .replace_ibus()
+                    .concat_tokens(),
+                HTML_FOOTER
+            )
+            .as_str(),
+        );
+    }
+
+    fs::copy("./src/style.css", "style.css").unwrap();
 }
 
-// pub fn copy_style_css() {
-//     let path = Path::new("style.css");
-//     let display = path.display();
-
-//     // Open a file in write-only mode, returns `io::Result<File>`
-//     let mut file = match File::create(&path) {
-//         Err(why) => panic!("Unable to create {}: {}", display, why),
-//         Ok(file) => file,
-//     };
-
-//     // Write the `html` string to `file`, returns `io::Result<()>`
-//     match file.write_all(html.as_bytes()) {
-//         Err(why) => panic!("Unable to write {}: {}", display, why),
-//         Ok(_) => println!("Successfully wrote {}", display),
-//     }
-// }
-
-pub fn write_html(html: &str) {
-    let path = Path::new("index.html");
+pub fn write_html(file_name: &str, html: &str) {
+    let f = format!("{}.html", file_name);
+    let path = Path::new(&f);
     let display = path.display();
 
     // Open a file in write-only mode, returns `io::Result<File>`
