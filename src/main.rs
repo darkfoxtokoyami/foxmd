@@ -403,7 +403,7 @@ fn main() {
     //let test = "L[sub]o[/sub]o[sup]k[/sup]i[sub]n[/sub]g [u]for[/u] a [b][i][color=blue]quick[/color][/i][/b] [color =\"#FF0000\"]brown[/color] fox [s]that[/s] jumps over a[b][color=pink]lazy [/color]dog[/b] Find out more [url=localhost]here![/url] or [url=localhost]there![/url]. Lorem Ipsum Salts.";
 
     let args = CommandLineArguments::new();
-    fs::copy("./src/style.css", "style.css").unwrap();
+    fs::copy("./src/style.css", "style.css").expect("./src/style.css not found!");
 
     //TODO: If args != contain fmd_files || path -> Process * in working dir
     //TODO: If args contains path -> Process * in path
