@@ -1,6 +1,9 @@
 /target
+*.bak
 *.gbin
 *.lock
 *.html
 *.css
 launch.json
+/main.js
+/style.css

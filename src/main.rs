@@ -60,18 +60,207 @@ use std::path::Path;
 use std::string;
 #[macro_use]
 extern crate lazy_static;
+
+struct FMD<'a> {
+    _tokens: Vec<&'a str>,
+    _incres: INCLUDED_RESOURCES,
+}
+
+impl<'a> FMD<'a> {
+    fn new() -> FMD<'a> {
+        FMD::<'a> {
+            _tokens: Vec::new(),
+            _incres: INCLUDED_RESOURCES::new(),
+        }
+    }
+
+    fn pre_tokenize(self, text: &'a str) -> FMD<'a> {
+        if (text.is_empty()) {
+            return FMD::<'a> {
+                _tokens: self._tokens,
+                _incres: self._incres,
+            };
+        }
+
+        let mut out: Vec<&str> = Vec::new();
+        let mut bounds: Vec<MDBounds> = Vec::new();
+
+        // for r in regs {
+        for k in REGEX_HASHMAP.keys() {
+            for m in REGEX_HASHMAP[k].find_iter(text) {
+                let t: MDBounds = MDBounds {
+                    start: m.start(),
+                    end: m.end(),
+                };
+                bounds.push(t);
+                //println!("{:?}, ", m.start().to_string());
+            }
+        }
+
+        // Regex matches are found out of order, so they need to be reorganized
+        bounds.sort_by(|a, b| a.start.cmp(&b.start));
+
+        let mut index: usize = 0;
+        for b in bounds {
+            if (index != b.start) {
+                out.push(&text[index..b.start]);
+            }
+            out.push(&text[b.start..b.end]);
+            index = b.end;
+        }
+        if (index != text.len()) {
+            out.push(&text[index..text.len()]);
+        }
+        FMD::<'a> {
+            _tokens: out,
+            _incres: self._incres,
+        }
+    }
+
+    fn replace_ibus(self) -> FMD<'a> {
+        if (self._tokens.is_empty()) {
+            return FMD::<'a> {
+                _tokens: self._tokens,
+                _incres: self._incres,
+            };
+        }
+
+        let mut out: Vec<&str> = Vec::new();
+
+        for t in self._tokens {
+            let mut out_str = "";
+            if (REGEX_HASHMAP[&REGEX_NAME::italics_open].is_match(t)) {
+                out_str = "<i>";
+            } else if (REGEX_HASHMAP[&REGEX_NAME::italics_close].is_match(t)) {
+                out_str = "</i>";
+            } else if (REGEX_HASHMAP[&REGEX_NAME::bold_open].is_match(t)) {
+                out_str = "<b>";
+            } else if (REGEX_HASHMAP[&REGEX_NAME::bold_close].is_match(t)) {
+                out_str = "</b>";
+            } else if (REGEX_HASHMAP[&REGEX_NAME::underline_open].is_match(t)) {
+                out_str = "<u>";
+            } else if (REGEX_HASHMAP[&REGEX_NAME::underline_close].is_match(t)) {
+                out_str = "</u>";
+            } else if (REGEX_HASHMAP[&REGEX_NAME::strikethrough_open].is_match(t)) {
+                out_str = "<span style = \"text-decoration:line-through;\">";
+            } else if (REGEX_HASHMAP[&REGEX_NAME::strikethrough_close].is_match(t)) {
+                out_str = "</span>";
+            } else if (REGEX_HASHMAP[&REGEX_NAME::superscript_open].is_match(t)) {
+                out_str = "<sup>";
+            } else if (REGEX_HASHMAP[&REGEX_NAME::superscript_close].is_match(t)) {
+                out_str = "</sup>";
+            } else if (REGEX_HASHMAP[&REGEX_NAME::subscript_open].is_match(t)) {
+                out_str = "<sub>";
+            } else if (REGEX_HASHMAP[&REGEX_NAME::subscript_close].is_match(t)) {
+                out_str = "</sub>";
+            } else if (REGEX_HASHMAP[&REGEX_NAME::color_open].is_match(t)) {
+                out.push(r#"<span style = "color:"#);
+                out.push(
+                    &t[Regex::new(r##"\[\s*color\s*=\s*"?"##)
+                        .unwrap()
+                        .find(t)
+                        .unwrap()
+                        .end()
+                        ..Regex::new(r##""?]"##).unwrap().find(t).unwrap().start()],
+                );
+                out_str = r#";">"#;
+                // out_str = "<span style = \"color:red;\">";
+            } else if (REGEX_HASHMAP[&REGEX_NAME::color_close].is_match(t)) {
+                out_str = "</span>";
+            } else {
+                out_str = t;
+            }
+            out.push(out_str);
+        }
+
+        FMD::<'a> {
+            _tokens: out,
+            _incres: self._incres,
+        }
+    }
+
+    pub fn concat_tokens(self) -> String {
+        let mut str: String = String::new();
+        for t in self._tokens {
+            str.push_str(t);
+        }
+        str
+    }
+}
+
+pub struct INCLUDED_RESOURCES {
+    pub pyscript: bool,
+}
+
+impl INCLUDED_RESOURCES {
+    fn new() -> INCLUDED_RESOURCES {
+        INCLUDED_RESOURCES { pyscript: false }
+    }
+}
+static HEADER_PYSCRIPT: &str = r##"<link rel="stylesheet" href="https://pyscript.net/latest/pyscript.css"/>        
+<script defer src="https://pyscript.net/latest/pyscript.js"></script>"##;
+
 static HTML_HEADER: &str = r##"<!DOCTYPE html>
 <html>
-    <head>
-        <link rel="stylesheet" type="text/css" href="style.css">
-        <link rel="stylesheet" href="https://pyscript.net/latest/pyscript.css" />
-        <script defer src="https://pyscript.net/latest/pyscript.js"></script>
+    <head>                
+        <link rel="stylesheet" href="style.css" />
     </head>
     <body>
+        <form class="color-picker" action="">
+            <fieldset>
+                <legend class="visually-hidden">Pick a color scheme</legend>
+                <label for="light" class="visually-hidden">Light</label>
+                <input type="radio" name="theme" id="light" checked>
+
+                <label for="pink" class="visually-hidden">Pink theme</label>
+                <input type="radio" id="pink" name="theme">
+
+                <label for="blue" class="visually-hidden">Blue theme</label>
+                <input type="radio" id="blue" name="theme">
+
+                <label for="green" class="visually-hidden">Green theme</label>
+                <input type="radio" id="green" name="theme">
+
+                <label for="dark" class="visually-hidden">Dark theme</label>
+                <input type="radio" id="dark" name="theme">
+            </fieldset>
+        </form>
+        <main>
         <p>"##;
-static HTML_FOOTER: &str = "</p>
+static HTML_FOOTER: &str = r##"</p>
+        </main>
+        <script>
+            const colorThemes = document.querySelectorAll('[name="theme"]');
+
+            // store theme
+            const storeTheme = function (theme) {
+            localStorage.setItem("theme", theme);
+            };
+
+            // set theme when visitor returns
+            const setTheme = function () {
+            const activeTheme = localStorage.getItem("theme");
+            colorThemes.forEach((themeOption) => {
+                if (themeOption.id === activeTheme) {
+                themeOption.checked = true;
+                }
+            });
+            // fallback for no :has() support
+            document.documentElement.className = activeTheme;
+            };
+
+            colorThemes.forEach((themeOption) => {
+            themeOption.addEventListener("click", () => {
+                storeTheme(themeOption.id);
+                // fallback for no :has() support
+                document.documentElement.className = themeOption.id;
+            });
+            });
+
+            document.onload = setTheme();
+        </script>
     </body>
-</html>";
+</html>"##;
 #[derive(Serialize, Deserialize, Debug)]
 struct ASTNode {
     t: String,
@@ -160,18 +349,36 @@ lazy_static! {
 }
 fn main() {
     // let test = Document("Hello, world!".to_string());
-    //! TODO Change this before making it public, and wipe the old git repo //
     let test = "L[sub]o[/sub]o[sup]k[/sup]i[sub]n[/sub]g [u]for[/u] a [b][i][color=blue]quick[/color][/i][/b] [color =\"#FF0000\"]brown[/color] fox [s]that[/s] jumps over a[b][color=pink]lazy [/color]dog[/b] Find out more [url=localhost]here![/url] or [url=localhost]there![/url]. Lorem Ipsum Salts.";
+    let fmd = FMD::new();
 
-    let t = pre_tokenize(test);
-    let u = replace_ibus(t);
-    let v = concat_tokens(u);
-    // for x in t {
-    //     println!("{}", x);
-    // }
-
-    write_html(format!("{}{}{}", HTML_HEADER, v, HTML_FOOTER).as_str());
+    write_html(
+        format!(
+            "{}{}{}",
+            HTML_HEADER,
+            fmd.pre_tokenize(test).replace_ibus().concat_tokens(),
+            HTML_FOOTER
+        )
+        .as_str(),
+    );
 }
+
+// pub fn copy_style_css() {
+//     let path = Path::new("style.css");
+//     let display = path.display();
+
+//     // Open a file in write-only mode, returns `io::Result<File>`
+//     let mut file = match File::create(&path) {
+//         Err(why) => panic!("Unable to create {}: {}", display, why),
+//         Ok(file) => file,
+//     };
+
+//     // Write the `html` string to `file`, returns `io::Result<()>`
+//     match file.write_all(html.as_bytes()) {
+//         Err(why) => panic!("Unable to write {}: {}", display, why),
+//         Ok(_) => println!("Successfully wrote {}", display),
+//     }
+// }
 
 pub fn write_html(html: &str) {
     let path = Path::new("index.html");
@@ -190,97 +397,6 @@ pub fn write_html(html: &str) {
     }
 }
 
-pub fn pre_tokenize(text: &str) -> Vec<&str> {
-    let mut out: Vec<&str> = Vec::new();
-    let mut bounds: Vec<MDBounds> = Vec::new();
-
-    // for r in regs {
-    for k in REGEX_HASHMAP.keys() {
-        for m in REGEX_HASHMAP[k].find_iter(text) {
-            let t: MDBounds = MDBounds {
-                start: m.start(),
-                end: m.end(),
-            };
-            bounds.push(t);
-            //println!("{:?}, ", m.start().to_string());
-        }
-    }
-
-    // Regex matches are found out of order, so they need to be reorganized
-    bounds.sort_by(|a, b| a.start.cmp(&b.start));
-
-    let mut index: usize = 0;
-    for b in bounds {
-        if (index != b.start) {
-            out.push(&text[index..b.start]);
-        }
-        out.push(&text[b.start..b.end]);
-        index = b.end;
-    }
-    if (index != text.len()) {
-        out.push(&text[index..text.len()]);
-    }
-    return out;
-}
-
-pub fn replace_ibus(tokens: Vec<&str>) -> Vec<&str> {
-    let mut out: Vec<&str> = Vec::new();
-
-    for t in tokens {
-        let mut out_str = "";
-        if (REGEX_HASHMAP[&REGEX_NAME::italics_open].is_match(t)) {
-            out_str = "<i>";
-        } else if (REGEX_HASHMAP[&REGEX_NAME::italics_close].is_match(t)) {
-            out_str = "</i>";
-        } else if (REGEX_HASHMAP[&REGEX_NAME::bold_open].is_match(t)) {
-            out_str = "<b>";
-        } else if (REGEX_HASHMAP[&REGEX_NAME::bold_close].is_match(t)) {
-            out_str = "</b>";
-        } else if (REGEX_HASHMAP[&REGEX_NAME::underline_open].is_match(t)) {
-            out_str = "<u>";
-        } else if (REGEX_HASHMAP[&REGEX_NAME::underline_close].is_match(t)) {
-            out_str = "</u>";
-        } else if (REGEX_HASHMAP[&REGEX_NAME::strikethrough_open].is_match(t)) {
-            out_str = "<span style = \"text-decoration:line-through;\">";
-        } else if (REGEX_HASHMAP[&REGEX_NAME::strikethrough_close].is_match(t)) {
-            out_str = "</span>";
-        } else if (REGEX_HASHMAP[&REGEX_NAME::superscript_open].is_match(t)) {
-            out_str = "<sup>";
-        } else if (REGEX_HASHMAP[&REGEX_NAME::superscript_close].is_match(t)) {
-            out_str = "</sup>";
-        } else if (REGEX_HASHMAP[&REGEX_NAME::subscript_open].is_match(t)) {
-            out_str = "<sub>";
-        } else if (REGEX_HASHMAP[&REGEX_NAME::subscript_close].is_match(t)) {
-            out_str = "</sub>";
-        } else if (REGEX_HASHMAP[&REGEX_NAME::color_open].is_match(t)) {
-            out.push(r#"<span style = "color:"#);
-            out.push(
-                &t[Regex::new(r##"\[\s*color\s*=\s*"?"##)
-                    .unwrap()
-                    .find(t)
-                    .unwrap()
-                    .end()
-                    ..Regex::new(r##""?]"##).unwrap().find(t).unwrap().start()],
-            );
-            out_str = r#";">"#;
-            // out_str = "<span style = \"color:red;\">";
-        } else if (REGEX_HASHMAP[&REGEX_NAME::color_close].is_match(t)) {
-            out_str = "</span>";
-        } else {
-            out_str = t;
-        }
-        out.push(out_str);
-    }
-    out
-}
-
-pub fn concat_tokens(tokens: Vec<&str>) -> String {
-    let mut str: String = String::new();
-    for t in tokens {
-        str.push_str(t);
-    }
-    str
-}
 fn Document(document: String) -> ASTNode {
     ASTNode {
         t: "Document".to_string(),
