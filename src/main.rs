@@ -78,12 +78,22 @@ impl CommandLineArguments {
             _args: env::args().collect(),
             fmd_files: {
                 let mut out = Vec::new();
+                let mut found_fmd_or_path = false;
                 for a in env::args() {
                     if (a.to_lowercase().ends_with(".fmd")) {
+                        found_fmd_or_path = true;
                         out.push(a);
                     }
                 }
-
+                //TODO Detect if path is in args
+                if (!found_fmd_or_path) {
+                    for f in fs::read_dir("./").unwrap() {
+                        let s = f.unwrap().path().display().to_string().to_lowercase();
+                        if (s.ends_with(".fmd")) {
+                            out.push(s);
+                        }
+                    }
+                }
                 out
             },
         }
