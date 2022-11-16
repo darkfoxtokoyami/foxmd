@@ -216,6 +216,8 @@ impl<'a> FMD<'a> {
                 // out_str = "<span style = \"color:red;\">";
             } else if (REGEX_HASHMAP[&REGEX_NAME::color_close].is_match(t)) {
                 out_str = "</span>";
+            } else if (REGEX_HASHMAP[&REGEX_NAME::newline].is_match(t)) {
+                out_str = "<br>";
             } else {
                 out_str = t;
             }
@@ -340,6 +342,7 @@ enum REGEX_NAME {
     subscript_close,
     color_open,
     color_close,
+    newline,
 }
 
 lazy_static! {
@@ -395,6 +398,7 @@ lazy_static! {
             REGEX_NAME::color_close,
             Regex::new(r"\[\s*/\s*color\s*]").unwrap(),
         );
+        m.insert(REGEX_NAME::newline, Regex::new(r"\n").unwrap());
         m
     };
 }
