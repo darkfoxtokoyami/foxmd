@@ -29,6 +29,8 @@
 [chapter][/chapter]     // Makes this the root node for a directory. I.e. This file will be the chapter page, the inner text will be the title you see on the Table of Contents,
                        .//  Everything else in the same directory will be the leaf nodes of the chapter. 1 [chapter] per directory
                        .// Probably defunct. easier to do something like- If a directory exists with the same name as the fmd, make the fmd a chapter
+
+Special Note: I'm aware that this is probably closer to BB Code than MarkDown, but.. The alternative would be for me to call Fox's MarkDown as Fox's BBC. Soo...
 */
 
 /*
