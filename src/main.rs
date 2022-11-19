@@ -131,72 +131,10 @@ impl INCLUDED_RESOURCES {
         INCLUDED_RESOURCES { pyscript: false }
     }
 }
-static HEADER_PYSCRIPT: &str = r##"<link rel="stylesheet" href="https://pyscript.net/latest/pyscript.css"/>        
-<script defer src="https://pyscript.net/latest/pyscript.js"></script>"##;
+const HEADER_PYSCRIPT: &str = include_str!("html/pyscript_header.html");
+const HTML_HEADER: &str = include_str!("html/header.html");
+const HTML_FOOTER: &str = include_str!("html/footer.html");
 
-static HTML_HEADER: &str = r##"<!DOCTYPE html>
-<html>
-    <head>                
-        <link rel="stylesheet" href="style.css" />
-    </head>
-    <body>
-        <form class="color-picker" action="">
-            <fieldset>
-                <legend class="visually-hidden">Pick a color scheme</legend>
-                <label for="light" class="visually-hidden">Light</label>
-                <input type="radio" name="theme" id="light" checked>
-
-                <label for="pink" class="visually-hidden">Pink theme</label>
-                <input type="radio" id="pink" name="theme">
-
-                <label for="blue" class="visually-hidden">Blue theme</label>
-                <input type="radio" id="blue" name="theme">
-
-                <label for="green" class="visually-hidden">Green theme</label>
-                <input type="radio" id="green" name="theme">
-
-                <label for="dark" class="visually-hidden">Dark theme</label>
-                <input type="radio" id="dark" name="theme">
-            </fieldset>
-        </form>
-        <main>
-            <div class="wrapper">
-                <p>"##;
-static HTML_FOOTER: &str = r##"</p>
-            </div>
-        </main>
-        <script>
-            const colorThemes = document.querySelectorAll('[name="theme"]');
-
-            // store theme
-            const storeTheme = function (theme) {
-            localStorage.setItem("theme", theme);
-            };
-
-            // set theme when visitor returns
-            const setTheme = function () {
-            const activeTheme = localStorage.getItem("theme");
-            colorThemes.forEach((themeOption) => {
-                if (themeOption.id === activeTheme) {
-                themeOption.checked = true;
-                }
-            });
-            // fallback for no :has() support
-            document.documentElement.className = activeTheme;
-            };
-
-            colorThemes.forEach((themeOption) => {
-            themeOption.addEventListener("click", () => {
-                storeTheme(themeOption.id);
-                // fallback for no :has() support
-                document.documentElement.className = themeOption.id;
-            });
-            });
-
-            document.onload = setTheme();
-        </script>
-    </body>
-</html>"##;
 #[derive(Serialize, Deserialize, Debug)]
 struct ASTNode {
     t: String,
