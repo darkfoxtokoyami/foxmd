@@ -74,8 +74,11 @@ use std::thread::JoinHandle;
 #[macro_use]
 extern crate lazy_static;
 
-static MAIN_JS: &str = include_str!("main.js");
-static STYLE_CSS: &str = include_str!("style.css");
+const MAIN_JS: &str = include_str!("main.js");
+const STYLE_CSS: &str = include_str!("style.css");
+const HEADER_PYSCRIPT: &str = include_str!("html/pyscript_header.html");
+const HTML_HEADER: &str = include_str!("html/header.html");
+const HTML_FOOTER: &str = include_str!("html/footer.html");
 
 struct CommandLineArguments {
     _args: Vec<String>,
@@ -131,9 +134,6 @@ impl INCLUDED_RESOURCES {
         INCLUDED_RESOURCES { pyscript: false }
     }
 }
-const HEADER_PYSCRIPT: &str = include_str!("html/pyscript_header.html");
-const HTML_HEADER: &str = include_str!("html/header.html");
-const HTML_FOOTER: &str = include_str!("html/footer.html");
 
 #[derive(Serialize, Deserialize, Debug)]
 struct ASTNode {
