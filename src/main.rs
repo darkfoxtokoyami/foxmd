@@ -72,9 +72,12 @@ use std::string;
 use std::sync::{mpsc, Arc, Mutex};
 use std::thread;
 use std::thread::JoinHandle;
+use threadpool::ThreadPool;
 
 #[macro_use]
 extern crate lazy_static;
+extern crate num_cpus;
+extern crate threadpool;
 
 const MAIN_JS: &str = include_str!("main.js");
 const STYLE_CSS: &str = include_str!("style.css");
@@ -276,14 +279,16 @@ struct FMD {
     _tokens: Vec<String>,
     _incres: INCLUDED_RESOURCES,
     _definitions: Vec<DEFINITION>,
+    _filename: String,
 }
 
-impl<'a> FMD {
+impl FMD {
     fn new() -> FMD {
         FMD {
             _tokens: Vec::new(),
             _incres: INCLUDED_RESOURCES::new(),
             _definitions: Vec::new(),
+            _filename: String::new(),
         }
     }
 
@@ -295,6 +300,7 @@ impl<'a> FMD {
                 _tokens: self._tokens,
                 _incres: self._incres,
                 _definitions: self._definitions,
+                _filename: self._filename,
             };
         }
 
@@ -331,6 +337,7 @@ impl<'a> FMD {
             _tokens: out,
             _incres: self._incres,
             _definitions: self._definitions,
+            _filename: self._filename,
         }
     }
 
@@ -341,6 +348,7 @@ impl<'a> FMD {
                 _tokens: self._tokens,
                 _incres: self._incres,
                 _definitions: self._definitions,
+                _filename: self._filename,
             };
         }
 
@@ -391,6 +399,7 @@ impl<'a> FMD {
             _tokens: self._tokens,
             _incres: self._incres,
             _definitions: self._definitions,
+            _filename: self._filename,
         }
     }
 
@@ -402,6 +411,7 @@ impl<'a> FMD {
                 _tokens: self._tokens,
                 _incres: self._incres,
                 _definitions: self._definitions,
+                _filename: self._filename,
             };
         }
 
@@ -475,6 +485,7 @@ impl<'a> FMD {
             _tokens: out,
             _incres: self._incres,
             _definitions: self._definitions,
+            _filename: self._filename,
         }
     }
 
@@ -507,9 +518,19 @@ impl<'a> FMD {
         }
         out_def
     }
+
+    pub fn set_filename(self, filename: impl Into<String>) -> FMD {
+        FMD {
+            _tokens: self._tokens,
+            _incres: self._incres,
+            _definitions: self._definitions,
+            _filename: filename.into(),
+        }
+    }
 }
 
 enum JOB_STATE {
+    S0_Init,
     S1_Parsing,
     S2_ResolveDef,
     S3_BuildTOC,
@@ -521,11 +542,36 @@ struct JOBS {
     jobs: Vec<FMD>,
 }
 
+impl JOBS {
+    fn new() -> JOBS {
+        JOBS {
+            state: JOB_STATE::S0_Init,
+            jobs_total: 0,
+            jobs_remaining: 0,
+            jobs: Vec::new(),
+        }
+    }
+
+    fn addJob(self, filename: impl Into<String>) -> JOBS {
+        let mut job = self.jobs;
+        let mut fmd = FMD::new();
+        fmd = fmd.set_filename(filename.into());
+        job.push(fmd);
+        JOBS {
+            state: self.state,
+            jobs_total: self.jobs_total + 1,
+            jobs_remaining: self.jobs_remaining + 1,
+            jobs: job,
+        }
+    }
+}
+
 fn main() {
     // let test = Document("Hello, world!".to_string());
     //let test = "L[sub]o[/sub]o[sup]k[/sup]i[sub]n[/sub]g [u]for[/u] a [b][i][color=blue]quick[/color][/i][/b] [color =\"#FF0000\"]brown[/color] fox [s]that[/s] jumps over a[b][color=pink]lazy [/color]dog[/b] Find out more [url=localhost]here![/url] or [url=localhost]there![/url]. Lorem Ipsum Salts.";
 
     let args = CommandLineArguments::new();
+    let args2 = CommandLineArguments::new();
     // fs::copy("./src/style.css", "style.css").expect("./src/style.css not found!");
     write_style_css();
 
@@ -533,19 +579,25 @@ fn main() {
     //TODO: If args contains path -> Process * in path
     let mut handles: Vec<JoinHandle<()>> = Vec::new();
     let mut definitions: Arc<Mutex<Vec<DEFINITION>>> = Arc::new(Mutex::new(Vec::new()));
-
+    let mut fmds: Arc<Mutex<Vec<FMD>>> = Arc::new(Mutex::new(Vec::new()));
+    let mut jobs: JOBS = JOBS::new();
+    let n_workers = 4;
+    let thread_pool = ThreadPool::new(num_cpus::get());
+    println!("Building Docs with {} threads", num_cpus::get());
     // Need to figure out a way to deal withmultiple passes.
     // Job State = Open/Parsing, Definition Resolution, Building Table of Contents, Completed
     // Jobs_Total  -> Amount of files to process, make sure this is >0
     // Jobs_Remaining -> Don't move to next state until this hits zero
     for f in args.fmd_files {
+        //jobs = jobs.addJob(f.to_owned());
         let def = Arc::clone(&definitions);
-        handles.push(thread::spawn(move || {
+        let t_fmds = Arc::clone(&fmds);
+        thread_pool.execute(move || {
             let html_filename = &f[0..f.len() - 4];
             let contents = fs::read_to_string(f.clone())
                 .expect(format!("Unable to read or find file: {}", f).as_str());
             let mut fmd = FMD::new();
-
+            fmd = fmd.set_filename(&f);
             fmd = fmd
                 .pre_tokenize(contents.as_str())
                 .parse_definitions()
@@ -560,13 +612,61 @@ fn main() {
                 tt_def.append(&mut *t_def);
                 *t_def = tt_def.to_owned();
             }
-        }));
+            {
+                let mut tt_fmds = t_fmds.lock().unwrap();
+                let mut ttt_fmds: Vec<FMD> = Vec::new();
+                ttt_fmds.append(&mut tt_fmds);
+                ttt_fmds.push(fmd);
+                *tt_fmds = ttt_fmds.to_owned();
+            }
+        });
     }
 
-    // Wait for all threads to finish
-    for h in handles {
-        h.join().unwrap();
+    thread_pool.join();
+    {
+        let t_fmds = fmds.lock().unwrap();
+        for fmd in &*t_fmds {
+            println!("Found: {}", fmd._filename);
+        }
     }
+    for f in args2.fmd_files {
+        //jobs = jobs.addJob(f.to_owned());
+        let def = Arc::clone(&definitions);
+        let t_fmds = Arc::clone(&fmds);
+        thread_pool.execute(move || {
+            let html_filename = &f[0..f.len() - 4];
+            let contents = fs::read_to_string(f.clone())
+                .expect(format!("Unable to read or find file: {}", f).as_str());
+            let mut fmd = FMD::new();
+            fmd = fmd.set_filename(&f);
+            fmd = fmd
+                .pre_tokenize(contents.as_str())
+                .parse_definitions()
+                .replace_ibus();
+            write_html(
+                html_filename,
+                format!("{}{}{}", HTML_HEADER, fmd.concat_tokens(), HTML_FOOTER).as_str(),
+            );
+            {
+                let mut t_def = def.lock().unwrap();
+                let mut tt_def = fmd.get_definitions();
+                tt_def.append(&mut *t_def);
+                *t_def = tt_def.to_owned();
+            }
+            {
+                let mut tt_fmds = t_fmds.lock().unwrap();
+                let mut ttt_fmds: Vec<FMD> = Vec::new();
+                ttt_fmds.append(&mut tt_fmds);
+                ttt_fmds.push(fmd);
+                *tt_fmds = ttt_fmds.to_owned();
+            }
+        });
+    }
+    thread_pool.join();
+    // Wait for all threads to finish
+    // for h in handles {
+    //     h.join().unwrap();
+    // }
 
     // Check for definitions. If exists, write to table of contents
     let appendix_defs = &*definitions.lock().unwrap();
