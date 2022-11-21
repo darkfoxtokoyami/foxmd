@@ -125,7 +125,17 @@ impl CommandLineArguments {
         out
     }
 }
+struct FMD_FILES_AND_TITLES {
+    pub title: String,
+    pub filename: String,
+}
 
+impl FMD_FILES_AND_TITLES {
+    fn new(mut self) {
+        self.title = String::new();
+        self.filename = String::new();
+    }
+}
 #[derive(Clone)]
 pub struct INCLUDED_RESOURCES {
     pub pyscript: bool,
@@ -262,15 +272,15 @@ lazy_static! {
 }
 
 #[derive(Clone)]
-struct FMD<'a> {
-    _tokens: Vec<&'a str>,
+struct FMD {
+    _tokens: Vec<String>,
     _incres: INCLUDED_RESOURCES,
     _definitions: Vec<DEFINITION>,
 }
 
-impl<'a> FMD<'a> {
-    fn new() -> FMD<'a> {
-        FMD::<'a> {
+impl<'a> FMD {
+    fn new() -> FMD {
+        FMD {
             _tokens: Vec::new(),
             _incres: INCLUDED_RESOURCES::new(),
             _definitions: Vec::new(),
@@ -278,21 +288,22 @@ impl<'a> FMD<'a> {
     }
 
     // Breaks a string up into tokens, separated by [] tags
-    fn pre_tokenize(self, text: &'a str) -> FMD<'a> {
+    fn pre_tokenize(self, _text: impl Into<String>) -> FMD {
+        let text: String = _text.into();
         if (text.is_empty()) {
-            return FMD::<'a> {
+            return FMD {
                 _tokens: self._tokens,
                 _incres: self._incres,
                 _definitions: self._definitions,
             };
         }
 
-        let mut out: Vec<&str> = Vec::new();
+        let mut out: Vec<String> = Vec::new();
         let mut bounds: Vec<MDBounds> = Vec::new();
 
         // for r in regs {
         for k in REGEX_HASHMAP.keys() {
-            for m in REGEX_HASHMAP[k].find_iter(text) {
+            for m in REGEX_HASHMAP[k].find_iter(&text) {
                 let t: MDBounds = MDBounds {
                     start: m.start(),
                     end: m.end(),
@@ -308,15 +319,15 @@ impl<'a> FMD<'a> {
         let mut index: usize = 0;
         for b in bounds {
             if (index != b.start) {
-                out.push(&text[index..b.start]);
+                out.push(text[index..b.start].to_owned());
             }
-            out.push(&text[b.start..b.end]);
+            out.push(text[b.start..b.end].to_owned());
             index = b.end;
         }
         if (index != text.len()) {
-            out.push(&text[index..text.len()]);
+            out.push(text[index..text.len()].to_owned());
         }
-        FMD::<'a> {
+        FMD {
             _tokens: out,
             _incres: self._incres,
             _definitions: self._definitions,
@@ -324,9 +335,9 @@ impl<'a> FMD<'a> {
     }
 
     //
-    fn parse_definitions(mut self) -> FMD<'a> {
+    fn parse_definitions(mut self) -> FMD {
         if (self._tokens.is_empty()) {
-            return FMD::<'a> {
+            return FMD {
                 _tokens: self._tokens,
                 _incres: self._incres,
                 _definitions: self._definitions,
@@ -338,10 +349,10 @@ impl<'a> FMD<'a> {
         let mut found_definition_open_idx = 0;
 
         for i in 0..self._tokens.len() {
-            if (REGEX_HASHMAP[&REGEX_NAME::definition_open].is_match(self._tokens[i])) {
+            if (REGEX_HASHMAP[&REGEX_NAME::definition_open].is_match(&self._tokens[i])) {
                 found_definition_open = true; // ! Warning: This does NOT check or support nested definitions! Not sure if I should panic at, or support those
                 found_definition_open_idx = i;
-            } else if (REGEX_HASHMAP[&REGEX_NAME::definition_close].is_match(self._tokens[i])) {
+            } else if (REGEX_HASHMAP[&REGEX_NAME::definition_close].is_match(&self._tokens[i])) {
                 if (found_definition_open) {
                     self._definitions.push(DEFINITION::new());
                     // get definition word
@@ -349,12 +360,12 @@ impl<'a> FMD<'a> {
                     self._definitions[idx].word = self._tokens[found_definition_open_idx]
                         [Regex::new(r##"\[\s*definition\s*=\s*"?"##)
                             .unwrap()
-                            .find(self._tokens[found_definition_open_idx])
+                            .find(&self._tokens[found_definition_open_idx])
                             .unwrap()
                             .end()
                             ..Regex::new(r##""?]"##)
                                 .unwrap()
-                                .find(self._tokens[found_definition_open_idx])
+                                .find(&self._tokens[found_definition_open_idx])
                                 .unwrap()
                                 .start()]
                         .to_string();
@@ -362,7 +373,7 @@ impl<'a> FMD<'a> {
                     // get text
                     let mut text = String::new();
                     for j in found_definition_open_idx + 1..i + 1 {
-                        text.push_str(self._tokens[j]);
+                        text.push_str(&self._tokens[j]);
                     }
                     let fmd = FMD::new();
                     let def_text = fmd
@@ -376,7 +387,7 @@ impl<'a> FMD<'a> {
             }
         }
 
-        FMD::<'a> {
+        FMD {
             _tokens: self._tokens,
             _incres: self._incres,
             _definitions: self._definitions,
@@ -385,80 +396,82 @@ impl<'a> FMD<'a> {
 
     // TODO: Copy this function or something; and make it work with definitions. Is there a way to do that without just copy+pasting my for loop in rust? It's kind of finnicky about that stuff
     // Replaces basic [] tags (e.g. italics, bold, underline, strikethrough) with corresponding html tags
-    fn replace_ibus(self) -> FMD<'a> {
+    fn replace_ibus(self) -> FMD {
         if (self._tokens.is_empty()) {
-            return FMD::<'a> {
+            return FMD {
                 _tokens: self._tokens,
                 _incres: self._incres,
                 _definitions: self._definitions,
             };
         }
 
-        let mut out: Vec<&str> = Vec::new();
+        let mut out: Vec<String> = Vec::new();
 
         for t in self._tokens {
             let mut out_str = "";
-            if (REGEX_HASHMAP[&REGEX_NAME::italics_open].is_match(t)) {
+            if (REGEX_HASHMAP[&REGEX_NAME::italics_open].is_match(&t)) {
                 out_str = "<i>";
-            } else if (REGEX_HASHMAP[&REGEX_NAME::italics_close].is_match(t)) {
+            } else if (REGEX_HASHMAP[&REGEX_NAME::italics_close].is_match(&t)) {
                 out_str = "</i>";
-            } else if (REGEX_HASHMAP[&REGEX_NAME::bold_open].is_match(t)) {
+            } else if (REGEX_HASHMAP[&REGEX_NAME::bold_open].is_match(&t)) {
                 out_str = "<b>";
-            } else if (REGEX_HASHMAP[&REGEX_NAME::bold_close].is_match(t)) {
+            } else if (REGEX_HASHMAP[&REGEX_NAME::bold_close].is_match(&t)) {
                 out_str = "</b>";
-            } else if (REGEX_HASHMAP[&REGEX_NAME::underline_open].is_match(t)) {
+            } else if (REGEX_HASHMAP[&REGEX_NAME::underline_open].is_match(&t)) {
                 out_str = "<u>";
-            } else if (REGEX_HASHMAP[&REGEX_NAME::underline_close].is_match(t)) {
+            } else if (REGEX_HASHMAP[&REGEX_NAME::underline_close].is_match(&t)) {
                 out_str = "</u>";
-            } else if (REGEX_HASHMAP[&REGEX_NAME::strikethrough_open].is_match(t)) {
+            } else if (REGEX_HASHMAP[&REGEX_NAME::strikethrough_open].is_match(&t)) {
                 out_str = "<span style = \"text-decoration:line-through;\">";
-            } else if (REGEX_HASHMAP[&REGEX_NAME::strikethrough_close].is_match(t)) {
+            } else if (REGEX_HASHMAP[&REGEX_NAME::strikethrough_close].is_match(&t)) {
                 out_str = "</span>";
-            } else if (REGEX_HASHMAP[&REGEX_NAME::superscript_open].is_match(t)) {
+            } else if (REGEX_HASHMAP[&REGEX_NAME::superscript_open].is_match(&t)) {
                 out_str = "<sup>";
-            } else if (REGEX_HASHMAP[&REGEX_NAME::superscript_close].is_match(t)) {
+            } else if (REGEX_HASHMAP[&REGEX_NAME::superscript_close].is_match(&t)) {
                 out_str = "</sup>";
-            } else if (REGEX_HASHMAP[&REGEX_NAME::subscript_open].is_match(t)) {
+            } else if (REGEX_HASHMAP[&REGEX_NAME::subscript_open].is_match(&t)) {
                 out_str = "<sub>";
-            } else if (REGEX_HASHMAP[&REGEX_NAME::subscript_close].is_match(t)) {
+            } else if (REGEX_HASHMAP[&REGEX_NAME::subscript_close].is_match(&t)) {
                 out_str = "</sub>";
-            } else if (REGEX_HASHMAP[&REGEX_NAME::color_open].is_match(t)) {
-                out.push(r#"<span style = "color:"#);
+            } else if (REGEX_HASHMAP[&REGEX_NAME::color_open].is_match(&t)) {
+                out.push(r#"<span style = "color:"#.to_owned());
                 out.push(
-                    &t[Regex::new(r##"\[\s*color\s*=\s*"?"##)
+                    t[Regex::new(r##"\[\s*color\s*=\s*"?"##)
                         .unwrap()
-                        .find(t)
+                        .find(&t)
                         .unwrap()
                         .end()
-                        ..Regex::new(r##""?]"##).unwrap().find(t).unwrap().start()],
+                        ..Regex::new(r##""?]"##).unwrap().find(&t).unwrap().start()]
+                        .to_owned(),
                 );
                 out_str = r#";">"#;
                 // out_str = "<span style = \"color:red;\">";
-            } else if (REGEX_HASHMAP[&REGEX_NAME::color_close].is_match(t)) {
+            } else if (REGEX_HASHMAP[&REGEX_NAME::color_close].is_match(&t)) {
                 out_str = "</span>";
-            } else if (REGEX_HASHMAP[&REGEX_NAME::newline].is_match(t)) {
+            } else if (REGEX_HASHMAP[&REGEX_NAME::newline].is_match(&t)) {
                 out_str = "<br>";
-            } else if (REGEX_HASHMAP[&REGEX_NAME::definition_open].is_match(t)) {
-                out.push(r#"<span class="definition_word"><b>"#);
+            } else if (REGEX_HASHMAP[&REGEX_NAME::definition_open].is_match(&t)) {
+                out.push(r#"<span class="definition_word"><b>"#.to_owned());
                 out.push(
-                    &t[Regex::new(r##"\[\s*definition\s*=\s*"?"##)
+                    t[Regex::new(r##"\[\s*definition\s*=\s*"?"##)
                         .unwrap()
-                        .find(t)
+                        .find(&t)
                         .unwrap()
                         .end()
-                        ..Regex::new(r##""?]"##).unwrap().find(t).unwrap().start()],
+                        ..Regex::new(r##""?]"##).unwrap().find(&t).unwrap().start()]
+                        .to_owned(),
                 );
                 out_str = r#":  </b></span><span class="definition_text">"#;
                 // out_str = "<span style = \"color:red;\">";
-            } else if (REGEX_HASHMAP[&REGEX_NAME::definition_close].is_match(t)) {
+            } else if (REGEX_HASHMAP[&REGEX_NAME::definition_close].is_match(&t)) {
                 out_str = "</span>";
             } else {
-                out_str = t;
+                out_str = &t;
             }
-            out.push(out_str);
+            out.push(out_str.to_owned());
         }
 
-        FMD::<'a> {
+        FMD {
             _tokens: out,
             _incres: self._incres,
             _definitions: self._definitions,
@@ -468,7 +481,7 @@ impl<'a> FMD<'a> {
     pub fn concat_tokens(&self) -> String {
         let mut str: String = String::new();
         for i in 0..self._tokens.len() {
-            str.push_str(self._tokens[i]);
+            str.push_str(&self._tokens[i]);
         }
 
         let mut out = String::new();
@@ -496,6 +509,18 @@ impl<'a> FMD<'a> {
     }
 }
 
+enum JOB_STATE {
+    S1_Parsing,
+    S2_ResolveDef,
+    S3_BuildTOC,
+}
+struct JOBS {
+    state: JOB_STATE,
+    jobs_total: usize,
+    jobs_remaining: usize,
+    jobs: Vec<FMD>,
+}
+
 fn main() {
     // let test = Document("Hello, world!".to_string());
     //let test = "L[sub]o[/sub]o[sup]k[/sup]i[sub]n[/sub]g [u]for[/u] a [b][i][color=blue]quick[/color][/i][/b] [color =\"#FF0000\"]brown[/color] fox [s]that[/s] jumps over a[b][color=pink]lazy [/color]dog[/b] Find out more [url=localhost]here![/url] or [url=localhost]there![/url]. Lorem Ipsum Salts.";
@@ -509,6 +534,10 @@ fn main() {
     let mut handles: Vec<JoinHandle<()>> = Vec::new();
     let mut definitions: Arc<Mutex<Vec<DEFINITION>>> = Arc::new(Mutex::new(Vec::new()));
 
+    // Need to figure out a way to deal withmultiple passes.
+    // Job State = Open/Parsing, Definition Resolution, Building Table of Contents, Completed
+    // Jobs_Total  -> Amount of files to process, make sure this is >0
+    // Jobs_Remaining -> Don't move to next state until this hits zero
     for f in args.fmd_files {
         let def = Arc::clone(&definitions);
         handles.push(thread::spawn(move || {
@@ -539,6 +568,7 @@ fn main() {
         h.join().unwrap();
     }
 
+    // Check for definitions. If exists, write to table of contents
     let appendix_defs = &*definitions.lock().unwrap();
     if (appendix_defs.len() > 0) {
         let mut out = "DEFINITIONS: <br>".to_string();

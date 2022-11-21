@@ -6,7 +6,7 @@ fn pre_tokenize_test(test_input: &str, expected_output: &str, token_idx: usize) 
     let mut fmd = FMD::new();
     let a = expected_output;
     fmd = fmd.pre_tokenize(test_input);
-    let b = fmd._tokens[token_idx];
+    let b = &fmd._tokens[token_idx];
     println!("Tokens: {}", b);
     assert_eq!(
         a.cmp(b),
