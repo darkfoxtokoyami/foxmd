@@ -15,7 +15,7 @@
 [code=LANGUAGE][/code]
 [spoiler][/spoiler]
 [noparse][/noparse]
-[title][/title]
+[title][/title]         // Order Table of Contents by Title, unless filename starts with chN_
 [titlesub][/titlesub]
 [tableofcontents][/tableofcontents]
 [h=N][/h]
@@ -30,9 +30,12 @@
                        .//  Everything else in the same directory will be the leaf nodes of the chapter. 1 [chapter] per directory
                        .// Probably defunct. easier to do something like- If a directory exists with the same name as the fmd, make the fmd a chapter
 
+Filename:
+    chN_                // If the filename starts with ch(Number)_ then order by filename rather than title
 Special Note: I'm aware that this is probably closer to BB Code than MarkDown, but.. The alternative would be for me to call Fox's MarkDown as Fox's BBC. Soo...
 */
-
+// TODO Title(done) -> Table of Contents -> Multi-Pass Definitions
+// TODO Sanitize Output for HTML compatibility (E.g. < -> &lt;)
 /*
 
 Document
@@ -200,6 +203,8 @@ enum REGEX_NAME {
     newline,
     definition_open,
     definition_close,
+    title_open,
+    title_close,
 }
 
 lazy_static! {
@@ -270,6 +275,14 @@ lazy_static! {
             REGEX_NAME::definition_close,
             Regex::new(r"(?i)\[\s*/\s*definition\s*]").unwrap(),
         );
+        m.insert(
+            REGEX_NAME::title_open,
+            Regex::new(r"(?i)\[\s*title\s*]").unwrap(),
+        );
+        m.insert(
+            REGEX_NAME::title_close,
+            Regex::new(r"(?i)\[\s*/\s*title\s*]").unwrap(),
+        );
         m
     };
 }
@@ -280,27 +293,30 @@ struct FMD {
     _incres: INCLUDED_RESOURCES,
     _definitions: Vec<DEFINITION>,
     _filename: String,
+    _title: String,
 }
 
 impl FMD {
-    fn new() -> FMD {
-        FMD {
+    fn new() -> Self {
+        Self {
             _tokens: Vec::new(),
             _incres: INCLUDED_RESOURCES::new(),
             _definitions: Vec::new(),
             _filename: String::new(),
+            _title: String::new(),
         }
     }
 
     // Breaks a string up into tokens, separated by [] tags
-    fn pre_tokenize(self, _text: impl Into<String>) -> FMD {
+    fn pre_tokenize(self, _text: impl Into<String>) -> Self {
         let text: String = _text.into();
         if (text.is_empty()) {
-            return FMD {
+            return Self {
                 _tokens: self._tokens,
                 _incres: self._incres,
                 _definitions: self._definitions,
                 _filename: self._filename,
+                _title: self._title,
             };
         }
 
@@ -333,22 +349,24 @@ impl FMD {
         if (index != text.len()) {
             out.push(text[index..text.len()].to_owned());
         }
-        FMD {
+        Self {
             _tokens: out,
             _incres: self._incres,
             _definitions: self._definitions,
             _filename: self._filename,
+            _title: self._title,
         }
     }
 
     //
-    fn parse_definitions(mut self) -> FMD {
+    fn parse_definitions(mut self) -> Self {
         if (self._tokens.is_empty()) {
-            return FMD {
+            return Self {
                 _tokens: self._tokens,
                 _incres: self._incres,
                 _definitions: self._definitions,
                 _filename: self._filename,
+                _title: self._title,
             };
         }
 
@@ -395,23 +413,65 @@ impl FMD {
             }
         }
 
-        FMD {
+        Self {
             _tokens: self._tokens,
             _incres: self._incres,
             _definitions: self._definitions,
             _filename: self._filename,
+            _title: self._title,
+        }
+    }
+
+    fn parse_title(self) -> Self {
+        if (self._tokens.is_empty()) {
+            return Self {
+                _tokens: self._tokens,
+                _incres: self._incres,
+                _definitions: self._definitions,
+                _filename: self._filename,
+                _title: self._title,
+            };
+        }
+
+        let mut found_title_open = false;
+        let mut found_title_open_idx = 0;
+        let mut title = String::new();
+
+        for i in 0..self._tokens.len() {
+            if (REGEX_HASHMAP[&REGEX_NAME::title_open].is_match(&self._tokens[i])) {
+                found_title_open = true; // ! Warning: This does NOT check or support nested titles!
+                found_title_open_idx = i;
+            } else if (REGEX_HASHMAP[&REGEX_NAME::title_close].is_match(&self._tokens[i])) {
+                if (found_title_open) {
+                    // get title
+                    for j in found_title_open_idx + 1..i {
+                        title.push_str(&self._tokens[j]);
+                    }
+                }
+
+                found_title_open = false;
+            }
+        }
+
+        Self {
+            _tokens: self._tokens,
+            _incres: self._incres,
+            _definitions: self._definitions,
+            _filename: self._filename,
+            _title: title,
         }
     }
 
     // TODO: Copy this function or something; and make it work with definitions. Is there a way to do that without just copy+pasting my for loop in rust? It's kind of finnicky about that stuff
     // Replaces basic [] tags (e.g. italics, bold, underline, strikethrough) with corresponding html tags
-    fn replace_ibus(self) -> FMD {
+    fn replace_ibus(self) -> Self {
         if (self._tokens.is_empty()) {
-            return FMD {
+            return Self {
                 _tokens: self._tokens,
                 _incres: self._incres,
                 _definitions: self._definitions,
                 _filename: self._filename,
+                _title: self._title,
             };
         }
 
@@ -475,17 +535,22 @@ impl FMD {
                 // out_str = "<span style = \"color:red;\">";
             } else if (REGEX_HASHMAP[&REGEX_NAME::definition_close].is_match(&t)) {
                 out_str = "</span>";
+            } else if (REGEX_HASHMAP[&REGEX_NAME::title_open].is_match(&t)) {
+                out_str = r#"<span class="title">"#;
+            } else if (REGEX_HASHMAP[&REGEX_NAME::title_close].is_match(&t)) {
+                out_str = "</span>";
             } else {
                 out_str = &t;
             }
             out.push(out_str.to_owned());
         }
 
-        FMD {
+        Self {
             _tokens: out,
             _incres: self._incres,
             _definitions: self._definitions,
             _filename: self._filename,
+            _title: self._title,
         }
     }
 
@@ -519,12 +584,13 @@ impl FMD {
         out_def
     }
 
-    pub fn set_filename(self, filename: impl Into<String>) -> FMD {
-        FMD {
+    pub fn set_filename(self, filename: impl Into<String>) -> Self {
+        Self {
             _tokens: self._tokens,
             _incres: self._incres,
             _definitions: self._definitions,
             _filename: filename.into(),
+            _title: self._title,
         }
     }
 }
@@ -566,6 +632,28 @@ impl JOBS {
     }
 }
 
+fn generate_toc(toc_titles: Vec<(String, String)>) -> String {
+    let mut out: String = r##"<nav class="table-of-contents">
+    <ol>"##
+        .to_owned();
+
+    for (t, f) in toc_titles {
+        out.push_str(r##"<li class="toc-content">"##);
+        out.push_str(format!(r##"<a href="{}.html">"##, &f[0..f.len() - 4]).as_str());
+        if (t.is_empty()) {
+            out.push_str(&f[0..f.len() - 4]);
+        } else {
+            out.push_str(t.as_str());
+        }
+
+        out.push_str(r##"</a></li>"##);
+    }
+    out.push_str(
+        r##"    </ol>
+    </nav>"##,
+    );
+    out
+}
 fn main() {
     // let test = Document("Hello, world!".to_string());
     //let test = "L[sub]o[/sub]o[sup]k[/sup]i[sub]n[/sub]g [u]for[/u] a [b][i][color=blue]quick[/color][/i][/b] [color =\"#FF0000\"]brown[/color] fox [s]that[/s] jumps over a[b][color=pink]lazy [/color]dog[/b] Find out more [url=localhost]here![/url] or [url=localhost]there![/url]. Lorem Ipsum Salts.";
@@ -601,17 +689,22 @@ fn main() {
             fmd = fmd
                 .pre_tokenize(contents.as_str())
                 .parse_definitions()
+                .parse_title()
                 .replace_ibus();
-            write_html(
-                html_filename,
-                format!("{}{}{}", HTML_HEADER, fmd.concat_tokens(), HTML_FOOTER).as_str(),
-            );
+            // write_html(
+            //     html_filename,
+            //     format!("{}{}{}", HTML_HEADER, fmd.concat_tokens(), HTML_FOOTER).as_str(),
+            // );
+
+            // Push Definitions
             {
                 let mut t_def = def.lock().unwrap();
                 let mut tt_def = fmd.get_definitions();
                 tt_def.append(&mut *t_def);
                 *t_def = tt_def.to_owned();
             }
+
+            // Push FMDs
             {
                 let mut tt_fmds = t_fmds.lock().unwrap();
                 let mut ttt_fmds: Vec<FMD> = Vec::new();
@@ -623,16 +716,24 @@ fn main() {
     }
 
     thread_pool.join();
+
+    // Get Titles for Table of Contents
+    let mut toc_titles: Vec<(String, String)> = Vec::new();
     {
         let t_fmds = fmds.lock().unwrap();
         for fmd in &*t_fmds {
             println!("Found: {}", fmd._filename);
+            toc_titles.push((fmd._title.clone(), fmd._filename.clone()));
         }
     }
+
+    let table_of_contents = generate_toc(toc_titles);
+
     for f in args2.fmd_files {
         //jobs = jobs.addJob(f.to_owned());
         let def = Arc::clone(&definitions);
         let t_fmds = Arc::clone(&fmds);
+        let toc = table_of_contents.to_owned();
         thread_pool.execute(move || {
             let html_filename = &f[0..f.len() - 4];
             let contents = fs::read_to_string(f.clone())
@@ -645,7 +746,14 @@ fn main() {
                 .replace_ibus();
             write_html(
                 html_filename,
-                format!("{}{}{}", HTML_HEADER, fmd.concat_tokens(), HTML_FOOTER).as_str(),
+                format!(
+                    "{}{}{}{}",
+                    HTML_HEADER,
+                    toc,
+                    fmd.concat_tokens(),
+                    HTML_FOOTER
+                )
+                .as_str(),
             );
             {
                 let mut t_def = def.lock().unwrap();
