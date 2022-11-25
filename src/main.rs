@@ -521,7 +521,7 @@ impl FMD {
             } else if (REGEX_HASHMAP[&REGEX_NAME::newline].is_match(&t)) {
                 out_str = "<br>";
             } else if (REGEX_HASHMAP[&REGEX_NAME::definition_open].is_match(&t)) {
-                out.push(r#"<span class="definition_word"><b>"#.to_owned());
+                out.push(r#"<span class="definition-word"><b>"#.to_owned());
                 out.push(
                     t[Regex::new(r##"\[\s*definition\s*=\s*"?"##)
                         .unwrap()
@@ -531,7 +531,7 @@ impl FMD {
                         ..Regex::new(r##""?]"##).unwrap().find(&t).unwrap().start()]
                         .to_owned(),
                 );
-                out_str = r#":  </b></span><span class="definition_text">"#;
+                out_str = r#":  </b></span><span class="definition-text">"#;
                 // out_str = "<span style = \"color:red;\">";
             } else if (REGEX_HASHMAP[&REGEX_NAME::definition_close].is_match(&t)) {
                 out_str = "</span>";
@@ -691,10 +691,6 @@ fn main() {
                 .parse_definitions()
                 .parse_title()
                 .replace_ibus();
-            // write_html(
-            //     html_filename,
-            //     format!("{}{}{}", HTML_HEADER, fmd.concat_tokens(), HTML_FOOTER).as_str(),
-            // );
 
             // Push Definitions
             {
@@ -715,6 +711,7 @@ fn main() {
         });
     }
 
+    // Wait for all threads to finish
     thread_pool.join();
 
     // Get Titles for Table of Contents
@@ -727,71 +724,57 @@ fn main() {
         }
     }
 
+    // Compile Table of Contents and write Definitions' Appendix to disk
+    // WARNING: definitions are locked here, but the lock doesn't go out of scope until the end of main!
+    let appendix_defs = &*definitions.lock().unwrap();
+    if (appendix_defs.len() > 0) {
+        toc_titles.push(("Appendix A".to_owned(), "appendix_a....".to_owned()));
+    }
+
     let table_of_contents = generate_toc(toc_titles);
 
-    for f in args2.fmd_files {
-        //jobs = jobs.addJob(f.to_owned());
-        let def = Arc::clone(&definitions);
-        let t_fmds = Arc::clone(&fmds);
-        let toc = table_of_contents.to_owned();
-        thread_pool.execute(move || {
-            let html_filename = &f[0..f.len() - 4];
-            let contents = fs::read_to_string(f.clone())
-                .expect(format!("Unable to read or find file: {}", f).as_str());
-            let mut fmd = FMD::new();
-            fmd = fmd.set_filename(&f);
-            fmd = fmd
-                .pre_tokenize(contents.as_str())
-                .parse_definitions()
-                .replace_ibus();
-            write_html(
-                html_filename,
-                format!(
-                    "{}{}{}{}",
-                    HTML_HEADER,
-                    toc,
-                    fmd.concat_tokens(),
-                    HTML_FOOTER
-                )
-                .as_str(),
-            );
-            {
-                let mut t_def = def.lock().unwrap();
-                let mut tt_def = fmd.get_definitions();
-                tt_def.append(&mut *t_def);
-                *t_def = tt_def.to_owned();
-            }
-            {
-                let mut tt_fmds = t_fmds.lock().unwrap();
-                let mut ttt_fmds: Vec<FMD> = Vec::new();
-                ttt_fmds.append(&mut tt_fmds);
-                ttt_fmds.push(fmd);
-                *tt_fmds = ttt_fmds.to_owned();
-            }
-        });
-    }
-    thread_pool.join();
-    // Wait for all threads to finish
-    // for h in handles {
-    //     h.join().unwrap();
-    // }
+    println!("table_of_contents:\n{}", &table_of_contents);
 
-    // Check for definitions. If exists, write to table of contents
-    let appendix_defs = &*definitions.lock().unwrap();
     if (appendix_defs.len() > 0) {
         let mut out = "DEFINITIONS: <br>".to_string();
         for d in appendix_defs {
+            out.push_str(r#"<span class="definition-word"><b>"#);
             out.push_str(d.word.as_str());
             out.push_str(": ");
+            out.push_str(r#":  </b></span><span class="definition-text">"#);
             out.push_str(d.text.as_str());
-            out.push_str("<br>");
+            out.push_str("</span><br>");
         }
 
         write_html(
-            "appendix_a.html",
-            format!("{}{}{}", HTML_HEADER, out, HTML_FOOTER).as_str(),
+            "appendix_a",
+            format!(
+                "{}{}{}{}",
+                HTML_HEADER, &table_of_contents, out, HTML_FOOTER
+            )
+            .as_str(),
         );
     }
+
+    // Write parsed fmds to file.
+    let i_fmds = Arc::clone(&fmds);
+    {
+        let t_fmds = i_fmds.lock().unwrap().to_vec();
+
+        for f in t_fmds {
+            //jobs = jobs.addJob(f.to_owned());
+            let toc = table_of_contents.to_owned();
+            println!("toc:\n{}", &toc);
+            thread_pool.execute(move || {
+                write_html(
+                    &f._filename[0..&f._filename.len() - 4],
+                    format!("{}{}{}{}", HTML_HEADER, toc, f.concat_tokens(), HTML_FOOTER).as_str(),
+                );
+            });
+        }
+    }
+    // Wait for all threads to finish
+    thread_pool.join();
 }
 
 pub fn write_style_css() {
