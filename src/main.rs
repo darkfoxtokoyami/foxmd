@@ -160,6 +160,24 @@ struct ASTNode {
     child: Option<Box<ASTNode>>,
 }
 
+enum CodeFormatting {
+    html,
+    css,
+    javascript,
+    python,
+    rust,
+    cpp,
+    cs,
+    java,
+    go,
+    gb,
+    x86,
+    arm,
+    fortran,
+    cobol,
+    fs,
+    vb,
+}
 #[derive(Clone)]
 struct DEFINITION {
     word: String,
@@ -205,6 +223,8 @@ enum REGEX_NAME {
     definition_close,
     title_open,
     title_close,
+    code_open,
+    code_close,
 }
 
 lazy_static! {
@@ -282,6 +302,14 @@ lazy_static! {
         m.insert(
             REGEX_NAME::title_close,
             Regex::new(r"(?i)\[\s*/\s*title\s*]").unwrap(),
+        );
+        m.insert(
+            REGEX_NAME::code_open,
+            Regex::new(r##"(?i)\[\s*code\s*=\s*"??(\w+)"??]"##).unwrap(),
+        );
+        m.insert(
+            REGEX_NAME::code_close,
+            Regex::new(r"(?i)\[\s*/\s*code\s*]").unwrap(),
         );
         m
     };
@@ -476,33 +504,35 @@ impl FMD {
         }
 
         let mut out: Vec<String> = Vec::new();
+        let mut code_block = false;
+        let mut code_block_language = String::new();
 
         for t in self._tokens {
-            let mut out_str = "";
+            let mut out_str = String::new();
             if (REGEX_HASHMAP[&REGEX_NAME::italics_open].is_match(&t)) {
-                out_str = "<i>";
+                out_str = "<i>".to_string();
             } else if (REGEX_HASHMAP[&REGEX_NAME::italics_close].is_match(&t)) {
-                out_str = "</i>";
+                out_str = "</i>".to_string();
             } else if (REGEX_HASHMAP[&REGEX_NAME::bold_open].is_match(&t)) {
-                out_str = "<b>";
+                out_str = "<b>".to_string();
             } else if (REGEX_HASHMAP[&REGEX_NAME::bold_close].is_match(&t)) {
-                out_str = "</b>";
+                out_str = "</b>".to_string();
             } else if (REGEX_HASHMAP[&REGEX_NAME::underline_open].is_match(&t)) {
-                out_str = "<u>";
+                out_str = "<u>".to_string();
             } else if (REGEX_HASHMAP[&REGEX_NAME::underline_close].is_match(&t)) {
-                out_str = "</u>";
+                out_str = "</u>".to_string();
             } else if (REGEX_HASHMAP[&REGEX_NAME::strikethrough_open].is_match(&t)) {
-                out_str = "<span style = \"text-decoration:line-through;\">";
+                out_str = "<span style = \"text-decoration:line-through;\">".to_string();
             } else if (REGEX_HASHMAP[&REGEX_NAME::strikethrough_close].is_match(&t)) {
-                out_str = "</span>";
+                out_str = "</span>".to_string();
             } else if (REGEX_HASHMAP[&REGEX_NAME::superscript_open].is_match(&t)) {
-                out_str = "<sup>";
+                out_str = "<sup>".to_string();
             } else if (REGEX_HASHMAP[&REGEX_NAME::superscript_close].is_match(&t)) {
-                out_str = "</sup>";
+                out_str = "</sup>".to_string();
             } else if (REGEX_HASHMAP[&REGEX_NAME::subscript_open].is_match(&t)) {
-                out_str = "<sub>";
+                out_str = "<sub>".to_string();
             } else if (REGEX_HASHMAP[&REGEX_NAME::subscript_close].is_match(&t)) {
-                out_str = "</sub>";
+                out_str = "</sub>".to_string();
             } else if (REGEX_HASHMAP[&REGEX_NAME::color_open].is_match(&t)) {
                 out.push(r#"<span style = "color:"#.to_owned());
                 out.push(
@@ -514,12 +544,12 @@ impl FMD {
                         ..Regex::new(r##""?]"##).unwrap().find(&t).unwrap().start()]
                         .to_owned(),
                 );
-                out_str = r#";">"#;
+                out_str = r#";">"#.to_string();
                 // out_str = "<span style = \"color:red;\">";
             } else if (REGEX_HASHMAP[&REGEX_NAME::color_close].is_match(&t)) {
-                out_str = "</span>";
+                out_str = "</span>".to_string();
             } else if (REGEX_HASHMAP[&REGEX_NAME::newline].is_match(&t)) {
-                out_str = "<br>";
+                out_str = "<br>".to_string();
             } else if (REGEX_HASHMAP[&REGEX_NAME::definition_open].is_match(&t)) {
                 out.push(r#"<span class="definition-word"><b>"#.to_owned());
                 out.push(
@@ -531,18 +561,47 @@ impl FMD {
                         ..Regex::new(r##""?]"##).unwrap().find(&t).unwrap().start()]
                         .to_owned(),
                 );
-                out_str = r#":  </b></span><span class="definition-text">"#;
+                out_str = r#":  </b></span><span class="definition-text">"#.to_string();
                 // out_str = "<span style = \"color:red;\">";
             } else if (REGEX_HASHMAP[&REGEX_NAME::definition_close].is_match(&t)) {
-                out_str = "</span>";
+                out_str = "</span>".to_string();
             } else if (REGEX_HASHMAP[&REGEX_NAME::title_open].is_match(&t)) {
-                out_str = r#"<span class="title">"#;
+                out_str = r#"<span class="title">"#.to_string();
             } else if (REGEX_HASHMAP[&REGEX_NAME::title_close].is_match(&t)) {
-                out_str = "</span>";
+                out_str = "</span>".to_string();
+            } else if (REGEX_HASHMAP[&REGEX_NAME::code_open].is_match(&t)) {
+                code_block_language = t[Regex::new(r##"\[\s*code\s*=\s*"?"##)
+                    .unwrap()
+                    .find(&t)
+                    .unwrap()
+                    .end()
+                    ..Regex::new(r##""?]"##).unwrap().find(&t).unwrap().start()]
+                    .to_owned();
+                out_str = r#"<code>"#.to_string();
+                code_block = true;
+            } else if (REGEX_HASHMAP[&REGEX_NAME::code_close].is_match(&t)) {
+                out_str = "</code>".to_string();
+                code_block = false;
             } else {
-                out_str = &t;
+                out_str = t;
+                out_str = out_str
+                    .replace("&", "&amp;")
+                    .replace("<", "&lt;")
+                    .replace(">", "&gt;")
+                    .replace(r##"""##, "&quot;")
+                    .replace("'", "&apos;")
+                    .replace("¢", "&cent;")
+                    .replace("£", "&pound;")
+                    .replace("¥", "&yen;")
+                    .replace("€", "&euro;")
+                    .replace("©", "&copy;")
+                    .replace("®", "&reg;");
+
+                if (code_block) {
+                    out_str = FMD::format_code_block(out_str, &code_block_language);
+                }
             }
-            out.push(out_str.to_owned());
+            out.push(out_str);
         }
 
         Self {
@@ -554,22 +613,37 @@ impl FMD {
         }
     }
 
+    pub fn format_code_block(code: String, language: impl Into<String>) -> String {
+        let lang = String::from(language.into());
+        let mut out = String::new();
+        match lang.to_lowercase().as_str() {
+            "html" => {
+                out = code.replace(
+                    "&lt;html&gt;",
+                    r##"<span class="code-html-tag">&lt;html&gt;</span>"##,
+                )
+            }
+            _ => {}
+        }
+        out
+    }
+
     pub fn concat_tokens(&self) -> String {
         let mut str: String = String::new();
         for i in 0..self._tokens.len() {
             str.push_str(&self._tokens[i]);
         }
 
-        let mut out = String::new();
-        out.push_str("<BR>DEFINITIONS<BR>");
-        for i in 0..self._definitions.len() {
-            out.push_str(self._definitions[i].word.as_str());
-            out.push_str(": ");
-            out.push_str(self._definitions[i].text.as_str());
-            out.push_str("<br>");
-        }
+        // let mut out = String::new();
+        // out.push_str("<BR>DEFINITIONS<BR>");
+        // for i in 0..self._definitions.len() {
+        //     out.push_str(self._definitions[i].word.as_str());
+        //     out.push_str(": ");
+        //     out.push_str(self._definitions[i].text.as_str());
+        //     out.push_str("<br>");
+        // }
 
-        str.push_str(out.as_str());
+        // str.push_str(out.as_str());
         str
     }
 
@@ -733,7 +807,7 @@ fn main() {
 
     let table_of_contents = generate_toc(toc_titles);
 
-    println!("table_of_contents:\n{}", &table_of_contents);
+    //println!("table_of_contents:\n{}", &table_of_contents);
 
     if (appendix_defs.len() > 0) {
         let mut out = "DEFINITIONS: <br>".to_string();
@@ -759,12 +833,14 @@ fn main() {
     // Write parsed fmds to file.
     let i_fmds = Arc::clone(&fmds);
     {
+        // I know this is janky, but the speculation is that CPU cycles and RAM R/W is cheaper than writing to disk sequentially (as opposed to in parallel like below).
+        //      Ideally there should be a performance benefit when writing 100's of files for bigger docs.
         let t_fmds = i_fmds.lock().unwrap().to_vec();
 
         for f in t_fmds {
             //jobs = jobs.addJob(f.to_owned());
             let toc = table_of_contents.to_owned();
-            println!("toc:\n{}", &toc);
+            //println!("toc:\n{}", &toc);
             thread_pool.execute(move || {
                 write_html(
                     &f._filename[0..&f._filename.len() - 4],
