@@ -1,12 +1,12 @@
-use std::cmp::Ordering;
-
 use super::*;
+use foxmd::*;
+use std::cmp::Ordering;
 
 fn pre_tokenize_test(test_input: &str, expected_output: &str, token_idx: usize) {
     let mut fmd = FMD::new();
     let a = expected_output;
     fmd = fmd.pre_tokenize(test_input);
-    let b = &fmd._tokens[token_idx];
+    let b = &fmd.get_tokens()[token_idx];
     println!("Tokens: {}", b);
     assert_eq!(
         a.cmp(b),
@@ -15,7 +15,7 @@ fn pre_tokenize_test(test_input: &str, expected_output: &str, token_idx: usize) 
         a,
         test_input,
         b,
-        fmd._tokens
+        fmd.get_tokens()
     );
 }
 fn pre_tokenize_test_with_data(tag: &str) {
