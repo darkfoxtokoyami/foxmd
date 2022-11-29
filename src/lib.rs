@@ -226,6 +226,8 @@ enum REGEX_NAME {
     title_close,
     code_open,
     code_close,
+    url_open,
+    url_close,
 }
 
 lazy_static! {
@@ -311,6 +313,14 @@ lazy_static! {
         m.insert(
             REGEX_NAME::code_close,
             Regex::new(r"(?i)\[\s*/\s*code\s*]").unwrap(),
+        );
+        m.insert(
+            REGEX_NAME::url_open,
+            Regex::new(r##"(?i)\[\s*url\s*=\s*"??(\S+?)"??]"##).unwrap(),
+        );
+        m.insert(
+            REGEX_NAME::url_close,
+            Regex::new(r"(?i)\[\s*/\s*url\s*]").unwrap(),
         );
         m
     };
@@ -583,6 +593,23 @@ impl FMD {
             } else if (REGEX_HASHMAP[&REGEX_NAME::code_close].is_match(&t)) {
                 out_str = "</code>".to_string();
                 code_block = false;
+            } else if (REGEX_HASHMAP[&REGEX_NAME::url_open].is_match(&t)) {
+                println!("Hit!");
+                out.push(r#"<a href=""#.to_owned());
+                out.push(
+                    t[Regex::new(r##"\[\s*url\s*=\s*"?"##)
+                        .unwrap()
+                        .find(&t)
+                        .unwrap()
+                        .end()
+                        ..Regex::new(r##""?]"##).unwrap().find(&t).unwrap().start()]
+                        .to_owned(),
+                );
+                out_str = r#"" target="_blank" rel="noopener noreferrer">"#.to_string();
+                // out_str = "<a style = \"color:red;\">";
+            } else if (REGEX_HASHMAP[&REGEX_NAME::url_close].is_match(&t)) {
+                println!("Hit 2!");
+                out_str = "</a>".to_string();
             } else {
                 out_str = t;
                 out_str = out_str
