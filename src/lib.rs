@@ -289,7 +289,7 @@ lazy_static! {
             REGEX_NAME::color_close,
             Regex::new(r"(?i)\[\s*/\s*color\s*]").unwrap(),
         );
-        m.insert(REGEX_NAME::newline, Regex::new(r"\n").unwrap());
+        // m.insert(REGEX_NAME::newline, Regex::new(r"\n").unwrap());
         m.insert(
             REGEX_NAME::definition_open,
             Regex::new(r##"(?i)\[\s*definition\s*=\s*"??(\w+)"??]"##).unwrap(),
@@ -559,8 +559,8 @@ impl FMD {
                 // out_str = "<span style = \"color:red;\">";
             } else if (REGEX_HASHMAP[&REGEX_NAME::color_close].is_match(&t)) {
                 out_str = "</span>".to_string();
-            } else if (REGEX_HASHMAP[&REGEX_NAME::newline].is_match(&t)) {
-                out_str = "<br>".to_string();
+            // } else if (REGEX_HASHMAP[&REGEX_NAME::newline].is_match(&t)) {
+            //     out_str = "<br>".to_string();
             } else if (REGEX_HASHMAP[&REGEX_NAME::definition_open].is_match(&t)) {
                 out.push(r#"<span class="definition-word"><b>"#.to_owned());
                 out.push(
@@ -594,7 +594,6 @@ impl FMD {
                 out_str = "</code>".to_string();
                 code_block = false;
             } else if (REGEX_HASHMAP[&REGEX_NAME::url_open].is_match(&t)) {
-                println!("Hit!");
                 out.push(r#"<a href=""#.to_owned());
                 out.push(
                     t[Regex::new(r##"\[\s*url\s*=\s*"?"##)
@@ -608,7 +607,6 @@ impl FMD {
                 out_str = r#"" target="_blank" rel="noopener noreferrer">"#.to_string();
                 // out_str = "<a style = \"color:red;\">";
             } else if (REGEX_HASHMAP[&REGEX_NAME::url_close].is_match(&t)) {
-                println!("Hit 2!");
                 out_str = "</a>".to_string();
             } else {
                 out_str = t;
@@ -623,9 +621,13 @@ impl FMD {
                     .replace("¥", "&yen;")
                     .replace("€", "&euro;")
                     .replace("©", "&copy;")
-                    .replace("®", "&reg;");
+                    .replace("®", "&reg;")
+                    .replace("\t", "&nbsp;&nbsp;&nbsp;&nbsp;")
+                    .replace("\r\n", "<br>")
+                    .replace("\n", "<br>");
 
                 if (code_block) {
+                    out_str = out_str.replace(" ", "&nbsp;");
                     out_str = FMD::format_code_block(out_str, &code_block_language);
                 }
             }
@@ -651,8 +653,22 @@ impl FMD {
                     r##"<span class="code-html-tag">&lt;html&gt;</span>"##,
                 )
             }
-            _ => {}
+            _ => out = code,
         }
+        let mut str = r##"<div class="code-block" style="height: 400px; width: 100%; background: lightgrey; overflow-x: scroll; overflow-y: scroll;"><div class="code-line-number-margin unselectable" style="top: 0px; left: 0px; width: 5%; float: left; font-size: 0.75em; white-space: nowrap;">"##.to_string();
+        println!("Find <br>? {}", out.find("<br>").unwrap().to_string());
+
+        while (out.starts_with("<br>")) {
+            out = out[4..out.len()].to_string();
+        }
+        let br_count = out.matches("<br>").count() + 1;
+        for n in 1..br_count {
+            str.push_str(format!("<div>{}</div>", n.to_string()).as_str());
+        }
+        str.push_str(r##"</div><div class="code-block-code" style="background: lightgrey; width: 95%; float: left; font-size: 0.75em;white-space: nowrap;">"##);
+        str.push_str(&out);
+        out = str;
+        out.push_str(r##"</div><div style="clear: both;"></div></div>"##);
         out
     }
 
