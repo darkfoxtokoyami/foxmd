@@ -6,13 +6,13 @@
 [color=<name/#NNNNNN>][/color]
 [sup][/sup]
 [sub][/sub]
+[url=""][/url]
+[code=LANGUAGE][/code]
 
 [citation=""][/citation]
 [definition=""][/definition]
 [img=""][/img]
 [video=""][/video]
-[url=""][/url]
-[code=LANGUAGE][/code]
 [spoiler][/spoiler]
 [noparse][/noparse]
 [title][/title]         // Order Table of Contents by Title, unless filename starts with chN_
@@ -228,6 +228,8 @@ enum REGEX_NAME {
     code_close,
     url_open,
     url_close,
+    noparse_open,
+    noparse_close,
 }
 
 lazy_static! {
@@ -321,6 +323,14 @@ lazy_static! {
         m.insert(
             REGEX_NAME::url_close,
             Regex::new(r"(?i)\[\s*/\s*url\s*]").unwrap(),
+        );
+        m.insert(
+            REGEX_NAME::noparse_open,
+            Regex::new(r"(?i)\[\s*noparse\s*]").unwrap(),
+        );
+        m.insert(
+            REGEX_NAME::noparse_close,
+            Regex::new(r"(?i)\[\s*/\s*noparse\s*]").unwrap(),
         );
         m
     };
@@ -514,122 +524,134 @@ impl FMD {
             };
         }
 
+        fn sanitize_string(str: impl Into<String>) -> String {
+            str.into()
+                .replace("&", "&amp;")
+                .replace("<", "&lt;")
+                .replace(">", "&gt;")
+                .replace(r##"""##, "&quot;")
+                .replace("'", "&apos;")
+                .replace("¢", "&cent;")
+                .replace("£", "&pound;")
+                .replace("¥", "&yen;")
+                .replace("€", "&euro;")
+                .replace("©", "&copy;")
+                .replace("®", "&reg;")
+                .replace("\t", "&nbsp;&nbsp;&nbsp;&nbsp;")
+                .replace("\r\n", "<br>")
+                .replace("\n", "<br>")
+        }
+
         let mut out: Vec<String> = Vec::new();
         let mut code_block = false;
         let mut code_block_language = String::new();
+        let mut noparse = false;
 
         for t in self._tokens {
             let mut out_str = String::new();
-            if (REGEX_HASHMAP[&REGEX_NAME::italics_open].is_match(&t)) {
-                out_str = "<i>".to_string();
-            } else if (REGEX_HASHMAP[&REGEX_NAME::italics_close].is_match(&t)) {
-                out_str = "</i>".to_string();
-            } else if (REGEX_HASHMAP[&REGEX_NAME::bold_open].is_match(&t)) {
-                out_str = "<b>".to_string();
-            } else if (REGEX_HASHMAP[&REGEX_NAME::bold_close].is_match(&t)) {
-                out_str = "</b>".to_string();
-            } else if (REGEX_HASHMAP[&REGEX_NAME::underline_open].is_match(&t)) {
-                out_str = "<u>".to_string();
-            } else if (REGEX_HASHMAP[&REGEX_NAME::underline_close].is_match(&t)) {
-                out_str = "</u>".to_string();
-            } else if (REGEX_HASHMAP[&REGEX_NAME::strikethrough_open].is_match(&t)) {
-                out_str = "<span style = \"text-decoration:line-through;\">".to_string();
-            } else if (REGEX_HASHMAP[&REGEX_NAME::strikethrough_close].is_match(&t)) {
-                out_str = "</span>".to_string();
-            } else if (REGEX_HASHMAP[&REGEX_NAME::superscript_open].is_match(&t)) {
-                out_str = "<sup>".to_string();
-            } else if (REGEX_HASHMAP[&REGEX_NAME::superscript_close].is_match(&t)) {
-                out_str = "</sup>".to_string();
-            } else if (REGEX_HASHMAP[&REGEX_NAME::subscript_open].is_match(&t)) {
-                out_str = "<sub>".to_string();
-            } else if (REGEX_HASHMAP[&REGEX_NAME::subscript_close].is_match(&t)) {
-                out_str = "</sub>".to_string();
-            } else if (REGEX_HASHMAP[&REGEX_NAME::color_open].is_match(&t)) {
-                out.push(r#"<span style = "color:"#.to_owned());
-                out.push(
-                    t[Regex::new(r##"\[\s*color\s*=\s*"?"##)
+            if (!noparse) {
+                if (REGEX_HASHMAP[&REGEX_NAME::italics_open].is_match(&t)) {
+                    out_str = "<i>".to_string();
+                } else if (REGEX_HASHMAP[&REGEX_NAME::italics_close].is_match(&t)) {
+                    out_str = "</i>".to_string();
+                } else if (REGEX_HASHMAP[&REGEX_NAME::bold_open].is_match(&t)) {
+                    out_str = "<b>".to_string();
+                } else if (REGEX_HASHMAP[&REGEX_NAME::bold_close].is_match(&t)) {
+                    out_str = "</b>".to_string();
+                } else if (REGEX_HASHMAP[&REGEX_NAME::underline_open].is_match(&t)) {
+                    out_str = "<u>".to_string();
+                } else if (REGEX_HASHMAP[&REGEX_NAME::underline_close].is_match(&t)) {
+                    out_str = "</u>".to_string();
+                } else if (REGEX_HASHMAP[&REGEX_NAME::strikethrough_open].is_match(&t)) {
+                    out_str = "<span style = \"text-decoration:line-through;\">".to_string();
+                } else if (REGEX_HASHMAP[&REGEX_NAME::strikethrough_close].is_match(&t)) {
+                    out_str = "</span>".to_string();
+                } else if (REGEX_HASHMAP[&REGEX_NAME::superscript_open].is_match(&t)) {
+                    out_str = "<sup>".to_string();
+                } else if (REGEX_HASHMAP[&REGEX_NAME::superscript_close].is_match(&t)) {
+                    out_str = "</sup>".to_string();
+                } else if (REGEX_HASHMAP[&REGEX_NAME::subscript_open].is_match(&t)) {
+                    out_str = "<sub>".to_string();
+                } else if (REGEX_HASHMAP[&REGEX_NAME::subscript_close].is_match(&t)) {
+                    out_str = "</sub>".to_string();
+                } else if (REGEX_HASHMAP[&REGEX_NAME::color_open].is_match(&t)) {
+                    out.push(r#"<span style = "color:"#.to_owned());
+                    out.push(
+                        t[Regex::new(r##"\[\s*color\s*=\s*"?"##)
+                            .unwrap()
+                            .find(&t)
+                            .unwrap()
+                            .end()
+                            ..Regex::new(r##""?]"##).unwrap().find(&t).unwrap().start()]
+                            .to_owned(),
+                    );
+                    out_str = r#";">"#.to_string();
+                    // out_str = "<span style = \"color:red;\">";
+                } else if (REGEX_HASHMAP[&REGEX_NAME::color_close].is_match(&t)) {
+                    out_str = "</span>".to_string();
+                // } else if (REGEX_HASHMAP[&REGEX_NAME::newline].is_match(&t)) {
+                //     out_str = "<br>".to_string();
+                } else if (REGEX_HASHMAP[&REGEX_NAME::definition_open].is_match(&t)) {
+                    out.push(r#"<span class="definition-word"><b>"#.to_owned());
+                    out.push(
+                        t[Regex::new(r##"\[\s*definition\s*=\s*"?"##)
+                            .unwrap()
+                            .find(&t)
+                            .unwrap()
+                            .end()
+                            ..Regex::new(r##""?]"##).unwrap().find(&t).unwrap().start()]
+                            .to_owned(),
+                    );
+                    out_str = r#":  </b></span><span class="definition-text">"#.to_string();
+                    // out_str = "<span style = \"color:red;\">";
+                } else if (REGEX_HASHMAP[&REGEX_NAME::definition_close].is_match(&t)) {
+                    out_str = "</span>".to_string();
+                } else if (REGEX_HASHMAP[&REGEX_NAME::title_open].is_match(&t)) {
+                    out_str = r#"<span class="title">"#.to_string();
+                } else if (REGEX_HASHMAP[&REGEX_NAME::title_close].is_match(&t)) {
+                    out_str = "</span>".to_string();
+                } else if (REGEX_HASHMAP[&REGEX_NAME::code_open].is_match(&t)) {
+                    code_block_language = t[Regex::new(r##"\[\s*code\s*=\s*"?"##)
                         .unwrap()
                         .find(&t)
                         .unwrap()
                         .end()
                         ..Regex::new(r##""?]"##).unwrap().find(&t).unwrap().start()]
-                        .to_owned(),
-                );
-                out_str = r#";">"#.to_string();
-                // out_str = "<span style = \"color:red;\">";
-            } else if (REGEX_HASHMAP[&REGEX_NAME::color_close].is_match(&t)) {
-                out_str = "</span>".to_string();
-            // } else if (REGEX_HASHMAP[&REGEX_NAME::newline].is_match(&t)) {
-            //     out_str = "<br>".to_string();
-            } else if (REGEX_HASHMAP[&REGEX_NAME::definition_open].is_match(&t)) {
-                out.push(r#"<span class="definition-word"><b>"#.to_owned());
-                out.push(
-                    t[Regex::new(r##"\[\s*definition\s*=\s*"?"##)
-                        .unwrap()
-                        .find(&t)
-                        .unwrap()
-                        .end()
-                        ..Regex::new(r##""?]"##).unwrap().find(&t).unwrap().start()]
-                        .to_owned(),
-                );
-                out_str = r#":  </b></span><span class="definition-text">"#.to_string();
-                // out_str = "<span style = \"color:red;\">";
-            } else if (REGEX_HASHMAP[&REGEX_NAME::definition_close].is_match(&t)) {
-                out_str = "</span>".to_string();
-            } else if (REGEX_HASHMAP[&REGEX_NAME::title_open].is_match(&t)) {
-                out_str = r#"<span class="title">"#.to_string();
-            } else if (REGEX_HASHMAP[&REGEX_NAME::title_close].is_match(&t)) {
-                out_str = "</span>".to_string();
-            } else if (REGEX_HASHMAP[&REGEX_NAME::code_open].is_match(&t)) {
-                code_block_language = t[Regex::new(r##"\[\s*code\s*=\s*"?"##)
-                    .unwrap()
-                    .find(&t)
-                    .unwrap()
-                    .end()
-                    ..Regex::new(r##""?]"##).unwrap().find(&t).unwrap().start()]
-                    .to_owned();
-                out_str = r#"<code>"#.to_string();
-                code_block = true;
-            } else if (REGEX_HASHMAP[&REGEX_NAME::code_close].is_match(&t)) {
-                out_str = "</code>".to_string();
-                code_block = false;
-            } else if (REGEX_HASHMAP[&REGEX_NAME::url_open].is_match(&t)) {
-                out.push(r#"<a href=""#.to_owned());
-                out.push(
-                    t[Regex::new(r##"\[\s*url\s*=\s*"?"##)
-                        .unwrap()
-                        .find(&t)
-                        .unwrap()
-                        .end()
-                        ..Regex::new(r##""?]"##).unwrap().find(&t).unwrap().start()]
-                        .to_owned(),
-                );
-                out_str = r#"" target="_blank" rel="noopener noreferrer">"#.to_string();
-                // out_str = "<a style = \"color:red;\">";
-            } else if (REGEX_HASHMAP[&REGEX_NAME::url_close].is_match(&t)) {
-                out_str = "</a>".to_string();
-            } else {
-                out_str = t;
-                out_str = out_str
-                    .replace("&", "&amp;")
-                    .replace("<", "&lt;")
-                    .replace(">", "&gt;")
-                    .replace(r##"""##, "&quot;")
-                    .replace("'", "&apos;")
-                    .replace("¢", "&cent;")
-                    .replace("£", "&pound;")
-                    .replace("¥", "&yen;")
-                    .replace("€", "&euro;")
-                    .replace("©", "&copy;")
-                    .replace("®", "&reg;")
-                    .replace("\t", "&nbsp;&nbsp;&nbsp;&nbsp;")
-                    .replace("\r\n", "<br>")
-                    .replace("\n", "<br>");
+                        .to_owned();
+                    out_str = r#"<code>"#.to_string();
+                    code_block = true;
+                } else if (REGEX_HASHMAP[&REGEX_NAME::code_close].is_match(&t)) {
+                    out_str = "</code>".to_string();
+                    code_block = false;
+                } else if (REGEX_HASHMAP[&REGEX_NAME::url_open].is_match(&t)) {
+                    out.push(r#"<a href=""#.to_owned());
+                    out.push(
+                        t[Regex::new(r##"\[\s*url\s*=\s*"?"##)
+                            .unwrap()
+                            .find(&t)
+                            .unwrap()
+                            .end()
+                            ..Regex::new(r##""?]"##).unwrap().find(&t).unwrap().start()]
+                            .to_owned(),
+                    );
+                    out_str = r#"" target="_blank" rel="noopener noreferrer">"#.to_string();
+                    // out_str = "<a style = \"color:red;\">";
+                } else if (REGEX_HASHMAP[&REGEX_NAME::url_close].is_match(&t)) {
+                    out_str = "</a>".to_string();
+                } else if (REGEX_HASHMAP[&REGEX_NAME::noparse_open].is_match(&t)) {
+                    noparse = true;
+                } else {
+                    out_str = sanitize_string(t);
 
-                if (code_block) {
-                    out_str = out_str.replace(" ", "&nbsp;");
-                    out_str = FMD::format_code_block(out_str, &code_block_language);
+                    if (code_block) {
+                        out_str = out_str.replace(" ", "&nbsp;");
+                        out_str = FMD::format_code_block(out_str, &code_block_language);
+                    }
                 }
+            } else if (REGEX_HASHMAP[&REGEX_NAME::noparse_close].is_match(&t)) {
+                noparse = false;
+            } else {
+                out_str = sanitize_string(t);
             }
             out.push(out_str);
         }
