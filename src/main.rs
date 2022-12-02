@@ -83,6 +83,10 @@ fn main() {
             toc_titles.push((fmd.get_title(), fmd.get_filename()));
         }
     }
+    // Sort the Table of Contents by Filename.  This allowes us to [title] a file however we want, but
+    //      still control the ordering of the chapters in the Table of Contents. E.g. CH1_MyFile.fmd with [title]B[/title]
+    //      will come before CH2_MyFile.fmd with [title]A[/title]
+    toc_titles.sort_by(|a, b| a.1.cmp(&b.1));
 
     // Compile Table of Contents and write Definitions' Appendix to disk
     // WARNING: definitions are locked here, but the lock doesn't go out of scope until the end of main!

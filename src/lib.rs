@@ -1,4 +1,5 @@
-/* TODO
+/*
+Done:
 [i][/i]
 [b][/b]
 [u][/u]
@@ -8,13 +9,14 @@
 [sub][/sub]
 [url=""][/url]
 [code=LANGUAGE][/code]
+[noparse][/noparse]
 
+ :TODO:
 [citation=""][/citation]
 [definition=""][/definition]
 [img=""][/img]
 [video=""][/video]
 [spoiler][/spoiler]
-[noparse][/noparse]
 [title][/title]         // Order Table of Contents by Title, unless filename starts with chN_
 [titlesub][/titlesub]
 [tableofcontents][/tableofcontents]
@@ -230,6 +232,8 @@ enum REGEX_NAME {
     url_close,
     noparse_open,
     noparse_close,
+    img_open,
+    img_close,
 }
 
 lazy_static! {
@@ -331,6 +335,14 @@ lazy_static! {
         m.insert(
             REGEX_NAME::noparse_close,
             Regex::new(r"(?i)\[\s*/\s*noparse\s*]").unwrap(),
+        );
+        m.insert(
+            REGEX_NAME::img_open,
+            Regex::new(r"(?i)\[\s*img\s*]").unwrap(),
+        );
+        m.insert(
+            REGEX_NAME::img_close,
+            Regex::new(r"(?i)\[\s*/\s*img\s*]").unwrap(),
         );
         m
     };
@@ -640,6 +652,10 @@ impl FMD {
                     out_str = "</a>".to_string();
                 } else if (REGEX_HASHMAP[&REGEX_NAME::noparse_open].is_match(&t)) {
                     noparse = true;
+                } else if (REGEX_HASHMAP[&REGEX_NAME::img_open].is_match(&t)) {
+                    out_str = r#"<img src=""#.to_string();
+                } else if (REGEX_HASHMAP[&REGEX_NAME::img_close].is_match(&t)) {
+                    out_str = r##"" style="max-width: 100%;"></img>"##.to_string();
                 } else {
                     out_str = sanitize_string(t);
 
@@ -802,11 +818,11 @@ impl JOBS {
     }
 }
 
-pub fn generate_toc(toc_titles: Vec<(String, String)>) -> String {
+pub fn generate_toc(mut toc_titles: Vec<(String, String)>) -> String {
+    // toc_titles Vec<(title, filename)>
     let mut out: String = r##"<nav class="table-of-contents">
     <ol>"##
         .to_owned();
-
     for (t, f) in toc_titles {
         out.push_str(r##"<li class="toc-content">"##);
         out.push_str(format!(r##"<a href="{}.html">"##, &f[0..f.len()]).as_str());
