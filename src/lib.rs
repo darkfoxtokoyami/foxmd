@@ -10,11 +10,11 @@ Done:
 [url=""][/url]
 [code=LANGUAGE][/code]
 [noparse][/noparse]
+[img][/img]
 
  :TODO:
 [citation=""][/citation]
 [definition=""][/definition]
-[img=""][/img]
 [video=""][/video]
 [spoiler][/spoiler]
 [title][/title]         // Order Table of Contents by Title, unless filename starts with chN_
@@ -23,8 +23,9 @@ Done:
 [h=N][/h]
 [python="<python program>"]<alternate/subscript text>[/python]
 [rust="<rust program>"]<alternate/subscript text>[/rust]
-[csv=""][/csv]
-[excel=""][/excel]
+[csv=][/csv]
+[excel][/excel]
+[table][/table]
 [math][/math]
 [latex][/latex]
 [gutter][/gutter]       // Basically, to put definitions of things next to paragraphs, in the righthand margins of the page I guess? I dunno
@@ -79,6 +80,7 @@ use std::sync::{mpsc, Arc, Mutex};
 use std::thread;
 use std::thread::JoinHandle;
 use threadpool::ThreadPool;
+use walkdir::WalkDir;
 
 #[macro_use]
 extern crate lazy_static;
@@ -207,33 +209,33 @@ pub struct MDBounds {
 
 #[derive(PartialEq, Eq, Hash)]
 enum REGEX_NAME {
-    italics_open,
-    italics_close,
-    bold_open,
     bold_close,
-    underline_open,
-    underline_close,
-    strikethrough_open,
-    strikethrough_close,
-    superscript_open,
-    superscript_close,
-    subscript_open,
-    subscript_close,
-    color_open,
-    color_close,
-    newline,
-    definition_open,
-    definition_close,
-    title_open,
-    title_close,
-    code_open,
+    bold_open,
     code_close,
-    url_open,
-    url_close,
-    noparse_open,
-    noparse_close,
-    img_open,
+    code_open,
+    color_close,
+    color_open,
+    definition_close,
+    definition_open,
     img_close,
+    img_open,
+    italics_close,
+    italics_open,
+    newline,
+    noparse_close,
+    noparse_open,
+    strikethrough_close,
+    strikethrough_open,
+    subscript_close,
+    subscript_open,
+    superscript_close,
+    superscript_open,
+    title_close,
+    title_open,
+    underline_close,
+    underline_open,
+    url_close,
+    url_open,
 }
 
 lazy_static! {
@@ -353,7 +355,7 @@ pub struct FMD {
     _tokens: Vec<String>,
     _incres: INCLUDED_RESOURCES,
     _definitions: Vec<DEFINITION>,
-    _filename: String,
+    _filename: Option<walkdir::DirEntry>,
     _title: String,
 }
 
@@ -363,7 +365,7 @@ impl FMD {
             _tokens: Vec::new(),
             _incres: INCLUDED_RESOURCES::new(),
             _definitions: Vec::new(),
-            _filename: String::new(),
+            _filename: None,
             _title: String::new(),
         }
     }
@@ -740,34 +742,42 @@ impl FMD {
         out_def
     }
 
-    pub fn get_filename(&self) -> String {
-        self._filename.to_owned()
-    }
-    pub fn set_filename(self, filename: impl Into<String>) -> Self {
-        let mut str: String = filename.into();
-        if (str.len() == 0) {
-            return Self {
-                _tokens: self._tokens,
-                _incres: self._incres,
-                _definitions: self._definitions,
-                _filename: self._filename,
-                _title: self._title,
-            };
-        }
+    pub fn get_file(&self) -> String {
+        let l = self
+            ._filename
+            .clone()
+            .unwrap()
+            .path()
+            .to_str()
+            .unwrap()
+            .len();
 
-        if (str.len() > 4) {
-            if (str[str.len() - 4..str.len()].eq_ignore_ascii_case(".fmd")) {
-                str.pop();
-                str.pop();
-                str.pop();
-                str.pop();
-            }
-        }
+        self._filename.clone().unwrap().path().to_str().unwrap()[0..l - 4].to_owned()
+    }
+    pub fn get_filename(&self) -> String {
+        let l = self
+            ._filename
+            .clone()
+            .unwrap()
+            .file_name()
+            .to_str()
+            .unwrap()
+            .len();
+        self._filename
+            .clone()
+            .unwrap()
+            .file_name()
+            .to_str()
+            .unwrap()[0..l - 4]
+            .to_owned()
+    }
+    pub fn set_filename(self, filename: walkdir::DirEntry) -> Self {
+        // Assumes that filename is a valid DirEntry. Should be using get_fmd_files to get the DirEntries
         Self {
             _tokens: self._tokens,
             _incres: self._incres,
             _definitions: self._definitions,
-            _filename: str,
+            _filename: Some(filename),
             _title: self._title,
         }
     }
@@ -804,10 +814,10 @@ impl JOBS {
         }
     }
 
-    pub fn addJob(self, filename: impl Into<String>) -> JOBS {
+    pub fn addJob(self, filename: walkdir::DirEntry) -> JOBS {
         let mut job = self.jobs;
         let mut fmd = FMD::new();
-        fmd = fmd.set_filename(filename.into());
+        fmd = fmd.set_filename(filename);
         job.push(fmd);
         JOBS {
             state: self.state,
@@ -825,7 +835,7 @@ pub fn generate_toc(mut toc_titles: Vec<(String, String)>) -> String {
         .to_owned();
     for (t, f) in toc_titles {
         out.push_str(r##"<li class="toc-content">"##);
-        out.push_str(format!(r##"<a href="{}.html">"##, &f[0..f.len()]).as_str());
+        out.push_str(format!(r##"<a href="{}.html">"##, &f).as_str());
         if (t.is_empty()) {
             out.push_str(&f[0..f.len()]);
         } else {
@@ -838,5 +848,253 @@ pub fn generate_toc(mut toc_titles: Vec<(String, String)>) -> String {
         r##"    </ol>
     </nav>"##,
     );
+    out
+}
+
+pub fn print_dirs() {
+    for entry in WalkDir::new(".")
+        .into_iter()
+        .filter_map(|e| e.ok())
+        .filter_map(|e| match e.file_type().is_dir() {
+            true => Some(e),
+            false => None,
+        })
+    {
+        println!("{}", entry.path().display());
+    }
+}
+
+pub fn print_fmds() {
+    for entry in WalkDir::new(".")
+        .into_iter()
+        .filter_map(|e| e.ok())
+        .filter_map(|e| match e.file_type().is_dir() {
+            true => None,
+            false => Some(e),
+        })
+        .filter_map(|e| {
+            if (e.file_name().len() > 4) {
+                match &e.file_name().to_str()?[e.file_name().len() - 4..e.file_name().len()] {
+                    ".fmd" => Some(e),
+                    _ => None,
+                }
+            } else {
+                None
+            }
+        })
+    {
+        println!("{}", entry.file_name().to_str().unwrap());
+    }
+}
+
+pub fn get_fmd_files() -> Vec<walkdir::DirEntry> {
+    let mut out = Vec::new();
+
+    for entry in WalkDir::new(".")
+        .into_iter()
+        .filter_map(|e| e.ok())
+        .filter_map(|e| match e.file_type().is_dir() {
+            true => None,
+            false => Some(e),
+        })
+        .filter_map(|e| {
+            if (e.file_name().len() > 4) {
+                match &e.file_name().to_str()?[e.file_name().len() - 4..e.file_name().len()] {
+                    ".fmd" => Some(e),
+                    _ => None,
+                }
+            } else {
+                None
+            }
+        })
+    {
+        println!("Found: {}", &entry.path().display());
+        out.push(entry);
+    }
+    out
+}
+
+pub fn parse_fmds_in_dir_recursively(directory: impl Into<String>) {
+    let dir = directory.into();
+    let args = CommandLineArguments::new();
+    let args2 = CommandLineArguments::new();
+    // fs::copy("./src/style.css", "style.css").expect("./src/style.css not found!");
+    write_style_css();
+
+    //TODO: If args != contain fmd_files || path -> Process * in working dir
+    //TODO: If args contains path -> Process * in path
+    let mut handles: Vec<JoinHandle<()>> = Vec::new();
+    let mut definitions: Arc<Mutex<Vec<DEFINITION>>> = Arc::new(Mutex::new(Vec::new()));
+    let mut fmds: Arc<Mutex<Vec<FMD>>> = Arc::new(Mutex::new(Vec::new()));
+    let mut jobs: JOBS = JOBS::new();
+    let n_workers = 4;
+    let thread_pool = ThreadPool::new(num_cpus::get());
+    println!("File Types:");
+    print_fmds();
+    println!("Building Docs with {} threads", num_cpus::get());
+
+    // Need to figure out a way to deal withmultiple passes.
+    // Job State = Open/Parsing, Definition Resolution, Building Table of Contents, Completed
+    // Jobs_Total  -> Amount of files to process, make sure this is >0
+    // Jobs_Remaining -> Don't move to next state until this hits zero
+    for f in get_fmd_files() {
+        //jobs = jobs.addJob(f.to_owned());
+        let def = Arc::clone(&definitions);
+        let t_fmds = Arc::clone(&fmds);
+        thread_pool.execute(move || {
+            let mut fmd = FMD::new();
+            fmd = fmd.set_filename(f.clone());
+            let html_filename = fmd.get_filename();
+            let contents = fs::read_to_string(&f.path())
+                .expect(format!("Unable to read or find file: {}", &f.path().display()).as_str());
+
+            fmd = fmd
+                .pre_tokenize(contents.as_str())
+                .parse_definitions()
+                .parse_title()
+                .replace_ibus();
+
+            // Push Definitions
+            {
+                let mut t_def = def.lock().unwrap();
+                let mut tt_def = fmd.get_definitions();
+                tt_def.append(&mut *t_def);
+                *t_def = tt_def.to_owned();
+            }
+
+            // Push FMDs
+            {
+                let mut tt_fmds = t_fmds.lock().unwrap();
+                let mut ttt_fmds: Vec<FMD> = Vec::new();
+                ttt_fmds.append(&mut tt_fmds);
+                ttt_fmds.push(fmd);
+                *tt_fmds = ttt_fmds.to_owned();
+            }
+        });
+    }
+
+    // Wait for all threads to finish
+    thread_pool.join();
+
+    // Get Titles for Table of Contents
+    let mut toc_titles: Vec<(String, String)> = Vec::new();
+    {
+        let t_fmds = fmds.lock().unwrap();
+        for fmd in &*t_fmds {
+            println!("Found: {}", fmd.get_file());
+            toc_titles.push((fmd.get_title(), fmd.get_file()));
+        }
+    }
+    // Sort the Table of Contents by Filename.  This allowes us to [title] a file however we want, but
+    //      still control the ordering of the chapters in the Table of Contents. E.g. CH1_MyFile.fmd with [title]B[/title]
+    //      will come before CH2_MyFile.fmd with [title]A[/title]
+    toc_titles.sort_by(|a, b| a.1.cmp(&b.1));
+
+    // Compile Table of Contents and write Definitions' Appendix to disk
+    // WARNING: definitions are locked here, but the lock doesn't go out of scope until the end of main!
+    let appendix_defs = &*definitions.lock().unwrap();
+    if (appendix_defs.len() > 0) {
+        toc_titles.push(("Appendix A".to_owned(), "appendix_a".to_owned()));
+    }
+
+    let table_of_contents = generate_toc(toc_titles);
+
+    //println!("table_of_contents:\n{}", &table_of_contents);
+
+    if (appendix_defs.len() > 0) {
+        let mut out = "DEFINITIONS: <br>".to_string();
+        for d in appendix_defs {
+            out.push_str(r#"<span class="definition-word"><b>"#);
+            out.push_str(d.word.as_str());
+            out.push_str(": ");
+            out.push_str(r#":  </b></span><span class="definition-text">"#);
+            out.push_str(d.text.as_str());
+            out.push_str("</span><br>");
+        }
+
+        write_html(
+            "appendix_a",
+            format!(
+                "{}{}{}{}",
+                HTML_HEADER, &table_of_contents, out, HTML_FOOTER
+            )
+            .as_str(),
+        );
+    }
+
+    // Write parsed fmds to file.
+    let i_fmds = Arc::clone(&fmds);
+    {
+        // I know this is janky, but the speculation is that CPU cycles and RAM R/W is cheaper than writing to disk sequentially (as opposed to in parallel like below).
+        //      Ideally there should be a performance benefit when writing 100's of files for bigger docs.
+        let t_fmds = i_fmds.lock().unwrap().to_vec();
+
+        for f in t_fmds {
+            //jobs = jobs.addJob(f.to_owned());
+            let toc = table_of_contents.to_owned();
+            //println!("toc:\n{}", &toc);
+            thread_pool.execute(move || {
+                write_html(
+                    &f.get_file(),
+                    format!("{}{}{}{}", HTML_HEADER, toc, f.concat_tokens(), HTML_FOOTER).as_str(),
+                );
+            });
+        }
+    }
+    // Wait for all threads to finish
+    thread_pool.join();
+}
+fn write_style_css() {
+    let f = format!("style.css");
+    let path = Path::new(&f);
+    let display = path.display();
+
+    let mut file = match File::create(&path) {
+        Err(why) => panic!("Unable to create {}: {}", display, why),
+        Ok(file) => file,
+    };
+
+    match file.write_all(STYLE_CSS.as_bytes()) {
+        Err(why) => panic!("Unable to write {}: {}", display, why),
+        Ok(_) => println!("Successfully wrote {}", display),
+    }
+}
+
+fn write_html(file_name: &str, html: &str) {
+    let f = format!("{}.html", file_name);
+    let dir_depth = get_dir_depth(file_name);
+    let path = Path::new(&f);
+    let display = path.display();
+    let mut html_out = html.to_owned();
+    println!("Dir Depth: {}", &dir_depth.to_string());
+    if (dir_depth > 1) {
+        for _ in 1..dir_depth {
+            html_out = html_out.replace("style.css", "../style.css");
+            html_out = html_out.replace(
+                r##"<li class="toc-content"><a href=""##,
+                r##"<li class="toc-content"><a href="../"##,
+            );
+        }
+    }
+    // Open a file in write-only mode, returns `io::Result<File>`
+    let mut file = match File::create(&path) {
+        Err(why) => panic!("Unable to create {}: {}", display, why),
+        Ok(file) => file,
+    };
+
+    // Write the `html` string to `file`, returns `io::Result<()>`
+    match file.write_all(html_out.as_bytes()) {
+        Err(why) => panic!("Unable to write {}: {}", display, why),
+        Ok(_) => println!("Successfully wrote {}", display),
+    }
+}
+
+fn get_dir_depth(file_name: impl Into<String>) -> usize {
+    let f = file_name.into();
+    let out = if (f.matches("/").count() > f.matches(r##"\"##).count()) {
+        f.matches("/").count()
+    } else {
+        f.matches(r##"\"##).count()
+    };
     out
 }
