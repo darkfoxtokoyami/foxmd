@@ -70,10 +70,12 @@ use regex::RegexSet;
 use serde::{Deserialize, Serialize};
 use serde_json::value::Index;
 use std::collections::HashMap;
+use std::collections::VecDeque;
 use std::env;
 use std::fs;
 use std::fs::File;
 use std::io::prelude::*;
+//use std::ops::Index;
 use std::path::Path;
 use std::string;
 use std::sync::{mpsc, Arc, Mutex};
@@ -830,27 +832,127 @@ impl JOBS {
 
 pub fn generate_toc(mut toc_titles: Vec<(String, String)>) -> String {
     // toc_titles Vec<(title, filename)>
-    let mut out: String = r##"<nav class="table-of-contents">
-    <ol>"##
-        .to_owned();
-    for (t, f) in toc_titles {
-        out.push_str(r##"<li class="toc-content">"##);
-        out.push_str(format!(r##"<a href="{}.html">"##, &f).as_str());
-        if (t.is_empty()) {
-            out.push_str(&f[0..f.len()]);
-        } else {
-            out.push_str(t.as_str());
-        }
-
-        out.push_str(r##"</a></li>"##);
-    }
-    out.push_str(
-        r##"    </ol>
-    </nav>"##,
-    );
+    let mut out: String = r##"<nav class="table-of-contents">"##.to_owned();
+    //toc_titles = scrub_double_backslash(toc_titles);
+    //println!("toc_titles: {:?}", &toc_titles);
+    out.push_str(&generate_toc_leaf(toc_titles, ""));
+    out.push_str(r##"</nav>"##);
+    out
+}
+fn scrub_double_slash(str: impl Into<String>) -> String {
+    let mut out = str.into();
+    out = out.replace(r##"\\"##, r##"\"##);
+    out = out.replace(r##"//"##, r##"/"##);
     out
 }
 
+fn generate_toc_leaf(
+    mut toc_titles: Vec<(String, String)>,
+    directory: impl Into<String>,
+) -> String {
+    // toc_titles Vec<(title, filename)>
+    let mut out = "<ol>".to_string();
+    let mut toc = VecDeque::from(toc_titles);
+    let building_sub = false; // For building recursive directories.  Dunno how to word it, but turning ./subdir/x.fmd -> ToC subdir \n\t x
+    let dir = scrub_double_slash(directory.into());
+    let mut ot = toc.pop_front();
+
+    while (ot != None) {
+        let (t, mut f) = ot.unwrap();
+
+        let dir_depth = get_dir_depth(&f);
+        if (dir_depth == 0) {
+            out.push_str(r##"<li class="toc-content">"##);
+            f = strip_dotslash_prefix(f);
+            f = scrub_double_slash(f);
+            f = strip_slash_prefix(f);
+            println!("a href: DIR:{} F:{}", &dir, &f);
+            out.push_str(format!(r##"<a href="{}{}.html">"##, &dir, &f).as_str());
+            if (t.is_empty()) {
+                out.push_str(&f[0..f.len()]);
+            } else {
+                out.push_str(t.as_str());
+            }
+            out.push_str(r##"</a></li>"##);
+        } else {
+            //Handle recursive/nested directories with fmd files
+            f = strip_dotslash_prefix(f);
+            f = strip_slash_prefix(f);
+            let subdir = get_toc_leaf_root_dir(&f);
+            let mut t_toc: Vec<(String, String)> = Vec::new();
+            f = strip_dotslash_prefix(f);
+            f = strip_slash_prefix(f);
+            f = f[subdir.len()..f.len()].to_string();
+            f = strip_slash_prefix(f);
+            println!("f: {}", &f);
+            t_toc.push((t, f));
+            let mut x = true;
+            //println!("toclen: {}", t_toc.len().to_string());
+
+            let mut moved_toc: VecDeque<(String, String)> = VecDeque::new();
+            // move all file entries with the same root directory into t_toc BROKEN
+            while (toc.len() > 0) {
+                let (moved_title, moved_filename) = toc.pop_front().unwrap();
+                println!(
+                    "rootdir {} == {}",
+                    get_toc_leaf_root_dir(&moved_filename),
+                    &subdir
+                );
+                if ((get_toc_leaf_root_dir(&moved_filename) == subdir) && subdir != "") {
+                    let (rt, mut rf) = (moved_title, moved_filename);
+                    rf = strip_dotslash_prefix(rf);
+                    rf = rf[subdir.len()..rf.len()].to_string();
+                    rf = strip_slash_prefix(rf);
+                    println!("rf: {}", &rf);
+                    t_toc.push((rt, rf));
+                } else {
+                    moved_toc.push_back((moved_title, moved_filename));
+                }
+            }
+            toc = moved_toc;
+            if (dir == "") {
+                //println!("/subdir: {}", &subdir);
+                out.push_str(&generate_toc_leaf(
+                    t_toc,
+                    scrub_double_slash(format!("{}/", &subdir)),
+                ));
+            } else if (subdir == "") {
+                //println!("/subdir: {}", &subdir);
+                out.push_str(&generate_toc_leaf(t_toc, "/"));
+            } else {
+                //println!("dir/subdir: {}/{} toc {:?}", &dir, &subdir, &t_toc);
+                out.push_str(&generate_toc_leaf(
+                    t_toc,
+                    scrub_double_slash(format!("{}/{}/", &dir, &subdir)),
+                ));
+            }
+            //TODO Remove leading subdir?
+            //TODO Check for filename == directory name This won't be in the subdir, fuuuuck
+        }
+
+        ot = toc.pop_front();
+    }
+
+    out.push_str("</ol>");
+    out
+}
+
+fn get_toc_leaf_root_dir(file_name: impl Into<String>) -> String {
+    let f = strip_dotslash_prefix(file_name.into());
+    let mut idx = 0;
+    if (f.matches("/").count() > f.matches(r##"\"##).count()) {
+        idx = f.find("/").unwrap();
+    } else {
+        if (f.matches(r##"\"##).count() > 0) {
+            idx = f.find(r##"\"##).unwrap();
+        } else {
+            return "".to_string();
+        }
+    };
+    let out = f[0..idx].to_string();
+
+    out
+}
 pub fn print_dirs() {
     for entry in WalkDir::new(".")
         .into_iter()
@@ -1067,8 +1169,8 @@ fn write_html(file_name: &str, html: &str) {
     let display = path.display();
     let mut html_out = html.to_owned();
     println!("Dir Depth: {}", &dir_depth.to_string());
-    if (dir_depth > 1) {
-        for _ in 1..dir_depth {
+    if (dir_depth > 0) {
+        for _ in 0..dir_depth {
             html_out = html_out.replace("style.css", "../style.css");
             html_out = html_out.replace(
                 r##"<li class="toc-content"><a href=""##,
@@ -1089,12 +1191,33 @@ fn write_html(file_name: &str, html: &str) {
     }
 }
 
+// ./file.fmd returns depth of 1.  Maybe I should strip out preceding ./ to prevent cross-platform bugs?
+//      That is, what guarantees that a file will begin with "./"?
 fn get_dir_depth(file_name: impl Into<String>) -> usize {
-    let f = file_name.into();
+    let f = strip_dotslash_prefix(file_name.into());
+
     let out = if (f.matches("/").count() > f.matches(r##"\"##).count()) {
         f.matches("/").count()
     } else {
         f.matches(r##"\"##).count()
     };
     out
+}
+
+fn strip_dotslash_prefix(file_name: String) -> String {
+    let mut f: String = file_name;
+    if (f.starts_with("./")) {
+        f = f.strip_prefix("./").unwrap().to_string()
+    } else if (f.starts_with(r##".\"##)) {
+        f = f.strip_prefix(r##".\"##).unwrap().to_string()
+    }
+    f
+}
+
+fn strip_slash_prefix(file_name: String) -> String {
+    let mut f: String = file_name;
+    if (f.starts_with("/") || f.starts_with(r##"\"##)) {
+        f = f[1..f.len()].to_string();
+    }
+    f
 }
