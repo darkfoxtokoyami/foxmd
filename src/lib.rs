@@ -11,13 +11,16 @@ Done:
 [code=LANGUAGE][/code]
 [noparse][/noparse]
 [img][/img]
+[title][/title]         // Order Table of Contents by Title, unless filename starts with chN_
 
  :TODO:
+ [left][/left]
+ [center][/center]
+ [right][/right]
 [citation=""][/citation]
 [definition=""][/definition]
 [video=""][/video]
 [spoiler][/spoiler]
-[title][/title]         // Order Table of Contents by Title, unless filename starts with chN_
 [titlesub][/titlesub]
 [tableofcontents][/tableofcontents]
 [h=N][/h]
@@ -68,6 +71,7 @@ MarkDownCode
 use regex::Regex;
 use regex::RegexSet;
 use serde::{Deserialize, Serialize};
+use serde_json::to_string;
 use serde_json::value::Index;
 use std::collections::HashMap;
 use std::collections::VecDeque;
@@ -238,6 +242,8 @@ enum REGEX_NAME {
     underline_open,
     url_close,
     url_open,
+    video_open,
+    video_close,
 }
 
 lazy_static! {
@@ -347,6 +353,14 @@ lazy_static! {
         m.insert(
             REGEX_NAME::img_close,
             Regex::new(r"(?i)\[\s*/\s*img\s*]").unwrap(),
+        );
+        m.insert(
+            REGEX_NAME::video_open,
+            Regex::new(r"(?i)\[\s*video\s*]").unwrap(),
+        );
+        m.insert(
+            REGEX_NAME::video_close,
+            Regex::new(r"(?i)\[\s*/\s*video\s*]").unwrap(),
         );
         m
     };
@@ -562,6 +576,8 @@ impl FMD {
         let mut code_block = false;
         let mut code_block_language = String::new();
         let mut noparse = false;
+        let mut video_tag = false;
+        let mut video_string = String::new();
 
         for t in self._tokens {
             let mut out_str = String::new();
@@ -660,6 +676,47 @@ impl FMD {
                     out_str = r#"<img src=""#.to_string();
                 } else if (REGEX_HASHMAP[&REGEX_NAME::img_close].is_match(&t)) {
                     out_str = r##"" style="max-width: 100%;"></img>"##.to_string();
+                } else if (REGEX_HASHMAP[&REGEX_NAME::video_open].is_match(&t)) {
+                    out_str = r#""#.to_string();
+                    video_tag = true;
+                } else if (REGEX_HASHMAP[&REGEX_NAME::video_close].is_match(&t)) {
+                    video_tag = false;
+                    let v = video_string.trim();
+                    if (v.to_lowercase().ends_with(".mp4")) {
+                        out_str = r##"<video controls>"##.to_string();
+                        out_str.push_str(r##"<source src=""##);
+                        out_str.push_str(v);
+                        out_str.push_str(r##"" type="video/mp4">"##);
+                        out_str.push_str(r##"</video>"##);
+                    } else if (v.to_lowercase().ends_with(".ogg")) {
+                        out_str = r##"<video controls>"##.to_string();
+                        out_str.push_str(r##"<source src=""##);
+                        out_str.push_str(v);
+                        out_str.push_str(r##"" type="video/ogg">"##);
+                        out_str.push_str(r##"</video>"##);
+                    } else if (v.to_lowercase().ends_with(".webm")) {
+                        out_str = r##"<video controls>"##.to_string();
+                        out_str.push_str(r##"<source src=""##);
+                        out_str.push_str(v);
+                        out_str.push_str(r##"" type="video/webm">"##);
+                        out_str.push_str(r##"</video>"##);
+                    } else if (v.to_lowercase().contains("youtube")) {
+                        if (v.to_lowercase().contains("embed")) {
+                            out_str = r##"<object data=""##.to_string();
+                            out_str.push_str(v);
+                            out_str.push_str(r##"" width="560px" height="315px"></object>"##);
+                        } else {
+                            out_str = "Could not embed video: ".to_string();
+                            out_str.push_str(v);
+                            out_str.push_str(", Please use the embedded URL for youtube videos (Share/Embed) E.g. https://www.youtube.com/embed/XXXXXXXXXXX");
+                        }
+                    } else {
+                        out_str = "Could not embed video: ".to_string();
+                        out_str.push_str(v);
+                    }
+                } else if (video_tag) {
+                    video_string = t;
+                    out_str = r##""##.to_string();
                 } else {
                     out_str = sanitize_string(t);
 
@@ -673,7 +730,9 @@ impl FMD {
             } else {
                 out_str = sanitize_string(t);
             }
-            out.push(out_str);
+            if (out_str != "") {
+                out.push(out_str);
+            }
         }
 
         Self {
