@@ -12,14 +12,14 @@ Done:
 [noparse][/noparse]
 [img][/img]
 [title][/title]         // Order Table of Contents by Title, unless filename starts with chN_
+[video][/video]
 
  :TODO:
- [left][/left]
- [center][/center]
- [right][/right]
+[left][/left]
+[center][/center]
+[right][/right]
 [citation=""][/citation]
 [definition=""][/definition]
-[video=""][/video]
 [spoiler][/spoiler]
 [titlesub][/titlesub]
 [tableofcontents][/tableofcontents]
@@ -858,6 +858,7 @@ pub enum JOB_STATE {
     S2_ResolveDef,
     S3_BuildTOC,
 }
+
 pub struct JOBS {
     state: JOB_STATE,
     jobs_total: usize,
@@ -910,28 +911,46 @@ fn generate_toc_leaf(
     directory: impl Into<String>,
 ) -> String {
     // toc_titles Vec<(title, filename)>
-    let mut out = "<ol>".to_string();
+    let mut out = "".to_string();
     let mut toc = VecDeque::from(toc_titles);
     let building_sub = false; // For building recursive directories.  Dunno how to word it, but turning ./subdir/x.fmd -> ToC subdir \n\t x
     let dir = scrub_double_slash(directory.into());
     let mut ot = toc.pop_front();
+    let mut index = "".to_string(); // For turning the uhh.. "Chapter Heading" into a navigatable page link, rather than an unnavigatable piece of text
+    let mut out_leaf = "".to_string();
+    let mut out_subdir = "".to_string();
 
     while (ot != None) {
         let (t, mut f) = ot.unwrap();
 
         let dir_depth = get_dir_depth(&f);
         if (dir_depth == 0) {
-            out.push_str(r##"<li class="toc-content">"##);
             f = strip_dotslash_prefix(f);
             f = scrub_double_slash(f);
             f = strip_slash_prefix(f);
-            out.push_str(format!(r##"<a href="{}{}.html">"##, &dir, &f).as_str());
-            if (t.is_empty()) {
-                out.push_str(&f[0..f.len()]);
+
+            // Build index
+            if (f.to_lowercase() == "index") {
+                println!("Found Index!");
+                index.push_str(r##"<li class="toc-content">"##); // Chapter Heading (I think)
+                index.push_str(format!(r##"<a href="{}{}.html">"##, &dir, &f).as_str());
+                if (t.is_empty()) {
+                    index.push_str(&f[0..f.len()]);
+                } else {
+                    index.push_str(t.as_str());
+                }
+                index.push_str(r##"</a></li>"##);
+                index.push_str(r##"</li>"##);
             } else {
-                out.push_str(t.as_str());
+                out_leaf.push_str(r##"<li class="toc-content">"##);
+                out_leaf.push_str(format!(r##"<a href="{}{}.html">"##, &dir, &f).as_str());
+                if (t.is_empty()) {
+                    out_leaf.push_str(&f[0..f.len()]);
+                } else {
+                    out_leaf.push_str(t.as_str());
+                }
+                out_leaf.push_str(r##"</a></li>"##);
             }
-            out.push_str(r##"</a></li>"##);
         } else {
             //Handle recursive/nested directories with fmd files
             f = strip_dotslash_prefix(f);
@@ -962,27 +981,30 @@ fn generate_toc_leaf(
             }
             toc = moved_toc;
 
-            out.push_str(r##"<li class="toc-content">"##);
-            out.push_str(&subdir);
-            out.push_str(r##"</li>"##);
+            // out.push_str(r##"<li class="toc-content">"##); // Chapter Heading (I think)
+            // out.push_str(&subdir);
+            // out.push_str(r##"</li>"##);
 
             if (dir == "") {
                 //println!("/subdir: {}", &subdir);
-                out.push_str(&generate_toc_leaf(
+                out_leaf.push_str(&generate_toc_leaf(
                     t_toc,
                     scrub_double_slash(format!("{}/", &subdir)),
                 ));
             } else if (subdir == "") {
                 //println!("/subdir: {}", &subdir);
-                out.push_str(&generate_toc_leaf(t_toc, "/"));
+                out_leaf.push_str(&generate_toc_leaf(t_toc, "/"));
             } else {
                 //println!("dir/subdir: {}/{} toc {:?}", &dir, &subdir, &t_toc);
-                out.push_str(&generate_toc_leaf(
+                out_leaf.push_str(&generate_toc_leaf(
                     t_toc,
                     scrub_double_slash(format!("{}/{}/", &dir, &subdir)),
                 ));
             }
-            //TODO Check for filename == directory name This won't be in the subdir, fuuuuck
+            //TODO: Ignore below comment -> The idiomatic way to handle this is by <subdir>/index.fmd
+            //          This ensures that all related content is packaged up into its own directory.
+            //          I.e., no floating files in superdirectories. Easier to maintain this way.
+            //NIXED TODO Check for filename == directory name This won't be in the subdir, fuuuuck
             //          This will probably be fixed by changing the .sort before it gets processed.
             //          E.g. Making sure DirName.FMD gets sorted before ./DirName/*.FMD
         }
@@ -990,6 +1012,26 @@ fn generate_toc_leaf(
         ot = toc.pop_front();
     }
 
+    if (index.is_empty()) {
+        if (dir.is_empty()) {
+        } else {
+            let mut out_dir = dir.trim_end_matches("/").to_string();
+            if (out_dir.contains("/")) {
+                out_dir = out_dir[out_dir.rfind("/").unwrap_or(0)..out_dir.len()]
+                    .trim_start_matches("/")
+                    .to_string();
+            }
+            out.push_str(r##"<li class="toc-content">"##); // Chapter Heading (I think)
+            out.push_str(&out_dir);
+            out.push_str(r##"</li>"##);
+        }
+    } else {
+        out.push_str(&index);
+    }
+    //out.push_str("<ol>");
+    out.push_str("<ol>");
+    out.push_str(&out_leaf);
+    //out.push_str("</ol>");
     out.push_str("</ol>");
     out
 }
