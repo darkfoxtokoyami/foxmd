@@ -141,6 +141,19 @@ impl CommandLineArguments {
 
         out
     }
+
+    pub fn getOutputDir(self) -> String {
+        let dash_o_pos = self._args.iter().position(|s| s == "-o");
+        if let Some(output_dir) = (dash_o_pos) {
+            if (self._args.len() > 2) {
+                self._args[dash_o_pos.unwrap() + 1].to_string()
+            } else {
+                "".to_string()
+            }
+        } else {
+            "".to_string()
+        }
+    }
 }
 pub struct FMD_FILES_AND_TITLES {
     pub title: String,
@@ -1120,6 +1133,8 @@ pub fn parse_fmds_in_dir_recursively(directory: impl Into<String>) {
     let args = CommandLineArguments::new();
     let args2 = CommandLineArguments::new();
     // fs::copy("./src/style.css", "style.css").expect("./src/style.css not found!");
+    let output_dir = args.getOutputDir();
+    println!("Output dir: {}", &output_dir);
     write_style_css();
 
     //TODO: If args != contain fmd_files || path -> Process * in working dir
@@ -1220,6 +1235,7 @@ pub fn parse_fmds_in_dir_recursively(directory: impl Into<String>) {
                 HTML_HEADER, &table_of_contents, out, HTML_FOOTER
             )
             .as_str(),
+            &output_dir,
         );
     }
 
@@ -1233,11 +1249,13 @@ pub fn parse_fmds_in_dir_recursively(directory: impl Into<String>) {
         for f in t_fmds {
             //jobs = jobs.addJob(f.to_owned());
             let toc = table_of_contents.to_owned();
+            let out_dir = output_dir.clone();
             //println!("toc:\n{}", &toc);
             thread_pool.execute(move || {
                 write_html(
                     &f.get_file(),
                     format!("{}{}{}{}", HTML_HEADER, toc, f.concat_tokens(), HTML_FOOTER).as_str(),
+                    out_dir.as_str(),
                 );
             });
         }
@@ -1261,12 +1279,13 @@ fn write_style_css() {
     }
 }
 
-fn write_html(file_name: &str, html: &str) {
-    let f = format!("{}.html", file_name);
+fn write_html(file_name: &str, html: &str, output_dir: &str) {
+    let f = format!("{}/{}.html", output_dir, file_name);
     let dir_depth = get_dir_depth(file_name);
     let path = Path::new(&f);
     let display = path.display();
     let mut html_out = html.to_owned();
+    println!("f: {}", &f);
     //println!("Dir Depth: {}", &dir_depth.to_string());
     if (dir_depth > 0) {
         for _ in 0..dir_depth {
@@ -1277,6 +1296,9 @@ fn write_html(file_name: &str, html: &str) {
             );
         }
     }
+
+    fs::create_dir_all(path.clone().parent().unwrap()).unwrap();
+
     // Open a file in write-only mode, returns `io::Result<File>`
     let mut file = match File::create(&path) {
         Err(why) => panic!("Unable to create {}: {}", display, why),
